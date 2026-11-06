@@ -1,0 +1,270 @@
+# RSI v1：RoboTwin 50 Hz 块因果 WAM（Joint 0.6 / A2V 0.4 + 视觉历史 + 前缀误差回收）。
+# 从 V15@52000 只加载权重（finetune，全新优化器/调度器/步数）；history_encoder
+# 是新增零初始化模块，允许缺失，其余键必须严格匹配。
+# 相对 V15 的改动：
+#   1. 时间轴：ratio 4（视频 12.5 Hz / 动作 50 Hz），4 个未来 AR 块 × 4 帧 × 16 步，
+#      每块 0.32 s；packed teacher forcing 一次前向训练 4 块。
+#   2. 采样 ranges 换成 rsi_f16_r4（16 帧 / ratio 4），episode catalog 不变。
+#   3. 显式混合 Joint/A2V，video/action/depth 模态 dropout 关闭；prompt dropout
+#      保留 0.1，部署 guidance_scale 5.0 依赖它。
+#   4. depth 跟随 RGB（rgb_only），不再共享视频噪声。
+#   5. seed 换成 20261016。
+# 4 节点 × 8 卡，每卡 batch 8，全局 256。闸门：2000 步看退化，4000 步做第一轮
+# RoboTwin 闭环（policy/ThinkerWAM_RSI，num_blocks 1 / execute_steps 16）。
+# 训练加速（launch 脚本 env，均已在本仓库测过等价性）：
+#   MOTUS_TEMPORAL_ATTN=flex（默认）  块稀疏 flex attention
+#   MOTUS_FP8_LINEAR=1（可选，默认关） uni trunk + video decoder 的 q/k/v/o/ffn 走 FP8
+#   MOTUS_UNI_CHECKPOINT_EVERY_K=k（可选，默认 1） 每 k 个 uni block 有 1 个不重算
+
+common:
+  control_hz: 50
+  action_dim: 14
+  state_dim: 14
+  unified_action_dim: 14
+  num_video_frames: 16
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 4
+  action_chunk_size: 64
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: true
+  cross_rank_source_policy: weighted_per_step
+  robot_names:
+    aloha:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 16
+  sources:
+  - name: robotwin_3d
+    dataset: robotwin_3d
+    weight: 1.0
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: task_balanced_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.train.rsi_f16_r4.ranges.sqlite
+      text_choice: random
+      action_start_offset: 0
+      without_replacement: true
+    eval_pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.holdout.rsi_f16_r4.ranges.sqlite
+      text_choice: first
+      action_start_offset: 0
+depth:
+  robotwin_3d_root: /data/xiongwei.zhao/robotwin_3d
+  z_near: 0.01
+  z_far: 2.0
+  mode: log
+  invalid_to: far
+  prod_keep_only: true
+  attach_workers: 6
+history:
+  enable: true
+  sources: [robotwin_3d]
+  strict_sources: true
+  seed: 20261015
+  robotwin_catalog: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+  robotwin_resize_mode: pad
+  recent_frames: 5
+  sparse_slots: 8
+  sparse_stride_s: 1.0
+  sparse_jitter: 0.0
+  include_episode_start: false
+  events:
+    enabled: true
+    gripper_indices: [6, 13]
+    closed_threshold: 0.3
+    open_threshold: 0.7
+    after_s: 0.08
+    cooldown_s: 0.16
+    max_frames: 8
+    capacity: 32
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    temporal_mode: block_causal
+    ar_latents_per_block: 1
+    ar_packed_teacher_forcing: true
+    ar_target_reads_earlier_targets: false
+    ar_cut_probs: null
+    temporal_und_reads: observed
+    world_mode_prob: 0.0
+    training_mode_probs:
+      joint: 0.60
+      a2v: 0.40
+    rgb_prefix_error_enable: true
+    rgb_prefix_error_prob: 0.25
+    rgb_prefix_error_scale: 0.5
+    rgb_prefix_error_max_rms_ratio: 0.1
+    rgb_prefix_error_warmup_steps: 100
+    rgb_prefix_error_capacity: 64
+    rgb_prefix_error_max_mb: 128.0
+    joint_action_prefix_error_enable: true
+    joint_action_prefix_error_dims: [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
+    joint_action_prefix_error_scale: 0.25
+    joint_action_prefix_error_max_abs: 0.02
+    history_enable: true
+    history_spatial_pool: 2
+    history_logit_bias_init: -6.0
+    recovery_condition_enable: false
+    modality_dropout_video: 0.0
+    modality_dropout_action: 0.0
+    modality_dropout_prompt: 0.1
+    modality_dropout_depth: 0.0
+    independent_modality_noise: true
+    flow_shift: 6.0
+    action_flow_shift: 1.0
+    action_norm_policy: zscore
+    action_target_repr: absolute_native
+    zero_action_loss_force_max_noise: false
+    enable_depth: true
+    depth_condition_mode: rgb_only
+    depth_loss_weight: 1.0
+    depth_motion_loss_enable: false
+    depth_edge_loss_enable: false
+    depth_read_by_action: true
+    depth_read_by_video: true
+    depth_read_by_und: true
+    depth_detach_video_kv: false
+    depth_share_video_noise: false
+    depth_uni_clone_layers: 14
+  unified_vlm_task_prompt: true
+  vlm_prompt_style: robotwin_tlayout
+  vlm_text_rewrite: false
+  vlm_field_dropout_prob: 0.0
+  inference:
+    num_inference_timesteps: 10
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 4
+    action_temporal_smooth_alpha: 0.0    # 与部署一致：部署不做块内 EMA
+    depth_temporal_smooth_alpha: 0.0
+  timing_level: 2
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+  load_pretrained_backbones: false
+training:
+  batch_size: 8
+  max_steps: 34000
+  learning_rate: 1.0e-05
+  depth_learning_rate: 1.0e-05
+  depth_clone_learning_rate: 1.0e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 1000
+  cycle_length: 1000000
+  f_max: 0.99
+  f_min: 0.4
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  train_steps_per_vae_encode: 1
+  seed: 20261016
+system:
+  checkpoint_dir: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/rsi_robotwin_v1
+  log_level: INFO
+  log_interval: 10
+  save_interval: 2000
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: RSI_v1
+resume:
+  checkpoint_path: null
+  auto_resume_latest: false
+  reset_scheduler: false
+finetune:
+  checkpoint_path: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v15_robotwin_full/robotwin_3d_full_v15_rgbd/V15_full/checkpoint_step_52000
+timing:
+  enabled: true
+  sync_cuda: false
+  interval: 10
+monitor:
+  enabled: true
+  metrics_interval: 1
+  data_dir: /data/xiongwei.zhao/thinkerwam-depth/motus_monitor_data
+  system_interval: 2.0
+  status_interval: 2.0
+  collect_system: true
+periodic_eval:
+  enabled: true
+  interval_steps: 4000
+  num_inference_steps: 10
+  batch_size: 8
+  seed: 20260908
+  vlm_generate: false
+  fps: 50
+  train_pool_fraction: 0.0
+  no_history_arm: true
+  a2v_arm: true
+  holdout_family_counts:
+    robotwin_3d: 268
+  cache_dir: /data/xiongwei.zhao/thinkerwam-depth/periodic_eval_cache_rsi_v1
+  source_weights:
+    robotwin_3d: 1.0
+    ewmbenchmark: 0
+  ewmbenchmark:
+    enabled: false
+    root: /data/chen.liao/EWMBenchmark
+    robot_name: agibot-a2-d

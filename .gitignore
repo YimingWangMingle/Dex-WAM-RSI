@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+validation/
+outputs/
+baseline-manifest.json
+
+# Local Python packaging products
+build/
+dist/
+*.egg-info/

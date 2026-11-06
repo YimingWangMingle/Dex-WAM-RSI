@@ -1,0 +1,6 @@
+# EgoVerse Zarr v3 runtime. Keep these versions fixed until a real-data
+# payload/queue regression validates an upgrade.
+zarr==3.1.5
+numcodecs==0.16.5
+donfig==0.8.1.post1
+google-crc32c==1.8.0

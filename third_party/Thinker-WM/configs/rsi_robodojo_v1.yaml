@@ -1,0 +1,270 @@
+# RSI RoboDojo v1：RoboDojo ARX-X5 25 Hz 块因果 WAM，3 任务（stack_bowls /
+# pour_liquid_into_cup / insert_tubes），RoboDojo_depth HDF5（RGB + 深度 + 14D 绝对关节）。
+# 从 RSI v1（rsi_robotwin_v1）@6000 只加载权重（finetune，全新优化器/调度器/步数）。
+# 相对 rsi_robotwin_v1 的改动：
+#   1. 时间轴：25 Hz 原生，ratio 2（视频 12.5 Hz / 动作 25 Hz），3 个未来 AR 块 × 4 帧 × 8 步，
+#      每块 0.32 s，chunk 24（0.96 s）。部署 num_blocks 1 / execute_steps 8。
+#   2. 数据：robodojo reader + field map configs/robodojo/arx_x5_joint14_v1（T 布局与
+#      RoboTwin Motus T 逐像素一致）；catalog/ranges/统计见 tmp/catalogs/robodojo_3task_v1。
+#   3. 机器人 robodojo_arx_x5（token 17，新槽位；action_stats 新条目）。
+#   4. 夹爪事件：closed 0.9 / open 0.97 + 停稳判定（closed_settle_s 0.08）——RoboDojo
+#      夹爪闭合时停在物体宽度（0~0.8 随任务变），固定 0.3 阈值会漏掉事件。
+#   5. periodic_eval 关闭（闭环评测只接了 RoboTwin）。训练中的验证是固定
+#      holdout 的开环动作/视频误差：每 1000 步、固定 120 窗口分到所有 rank，覆盖全部 15 条 holdout。
+#   6. seed 换成 20261021。
+#   7. 采样 task_cycled_ranges：每 batch 1 条 episode、8 个窗口各取自 8 个等分时段
+#      （起点不再扎堆）；续训经 install_exact_resume 精确跳过已消费 step。
+#   8. 机器人 token：finetune 时 aloha 槽位 16 拷到新槽位 17 起步。
+#   9. 数据读取：system.num_workers 4、depth.attach_workers 12。
+# prompt dropout 保留 0.1：训练无语言条件分支，部署 guidance_scale 5.0 依赖它。
+# 训练加速 env 同 rsi_robotwin_v1（MOTUS_TEMPORAL_ATTN=flex 等）。
+
+common:
+  control_hz: 25
+  action_dim: 14
+  state_dim: 14
+  unified_action_dim: 14
+  num_video_frames: 12
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 2
+  action_chunk_size: 24
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: true
+  cross_rank_source_policy: weighted_per_step
+  robot_names:
+    robodojo_arx_x5:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 17
+  sources:
+  - name: robodojo
+    dataset: robodojo
+    weight: 1.0
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robodojo_3task_v1/robodojo.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robodojo_3task_v1/robodojo.episode_catalog.index.sqlite
+    reader:
+      type: robodojo
+      field_map: /code1/zxw_data/pretrain/ThinkerWAM-RSI/configs/robodojo/arx_x5_joint14_v1.field_map.yaml
+      robot: robodojo_arx_x5
+      resize_mode: pad
+    pool:
+      type: task_cycled_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robodojo_3task_v1/robodojo.train.rsi_f12_r2.ranges.sqlite
+      text_choice: random
+      action_start_offset: 0
+      cycle_base_step: 0
+    eval_pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robodojo_3task_v1/robodojo.holdout.rsi_f12_r2.ranges.sqlite
+      text_choice: first
+      action_start_offset: 0
+      windows_per_episode: 8   # 每条 holdout 恰好一个 batch，15 条各评一次
+depth:
+  robodojo_field_map: /code1/zxw_data/pretrain/ThinkerWAM-RSI/configs/robodojo/arx_x5_joint14_v1.field_map.yaml
+  robodojo_catalog: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robodojo_3task_v1/robodojo.episode_catalog.jsonl
+  z_near: 0.01
+  z_far: 2.0
+  mode: log
+  invalid_to: far
+  prod_keep_only: true
+  attach_workers: 12
+history:
+  enable: true
+  sources: [robodojo]
+  strict_sources: true
+  seed: 20261015
+  robodojo_field_map: /code1/zxw_data/pretrain/ThinkerWAM-RSI/configs/robodojo/arx_x5_joint14_v1.field_map.yaml
+  robodojo_catalog: /code1/zxw_data/pretrain/ThinkerWAM-RSI/tmp/catalogs/robodojo_3task_v1/robodojo.episode_catalog.jsonl
+  robodojo_resize_mode: pad
+  recent_frames: 5
+  sparse_slots: 8
+  sparse_stride_s: 1.0
+  sparse_jitter: 0.0
+  include_episode_start: false
+  events:
+    enabled: true
+    gripper_indices: [6, 13]
+    closed_threshold: 0.9
+    open_threshold: 0.97
+    closed_settle_s: 0.08
+    closed_settle_delta: 0.01
+    after_s: 0.08
+    cooldown_s: 0.16
+    max_frames: 8
+    capacity: 32
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    temporal_mode: block_causal
+    ar_latents_per_block: 1
+    ar_packed_teacher_forcing: true
+    ar_target_reads_earlier_targets: false
+    ar_cut_probs: null
+    temporal_und_reads: observed
+    world_mode_prob: 0.0
+    training_mode_probs:
+      joint: 0.60
+      a2v: 0.40
+    rgb_prefix_error_enable: true
+    rgb_prefix_error_prob: 0.25
+    rgb_prefix_error_scale: 0.5
+    rgb_prefix_error_max_rms_ratio: 0.1
+    rgb_prefix_error_warmup_steps: 100
+    rgb_prefix_error_capacity: 64
+    rgb_prefix_error_max_mb: 128.0
+    joint_action_prefix_error_enable: true
+    joint_action_prefix_error_dims: [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
+    joint_action_prefix_error_scale: 0.25
+    joint_action_prefix_error_max_abs: 0.02
+    history_enable: true
+    history_spatial_pool: 2
+    history_logit_bias_init: -6.0
+    recovery_condition_enable: false
+    modality_dropout_video: 0.0
+    modality_dropout_action: 0.0
+    modality_dropout_prompt: 0.1
+    modality_dropout_depth: 0.0
+    independent_modality_noise: true
+    flow_shift: 6.0
+    action_flow_shift: 1.0
+    action_norm_policy: zscore
+    action_target_repr: absolute_native
+    zero_action_loss_force_max_noise: false
+    enable_depth: true
+    depth_condition_mode: rgb_only
+    depth_loss_weight: 1.0
+    depth_motion_loss_enable: false
+    depth_edge_loss_enable: false
+    depth_read_by_action: true
+    depth_read_by_video: true
+    depth_read_by_und: true
+    depth_detach_video_kv: false
+    depth_share_video_noise: false
+    depth_uni_clone_layers: 14
+  unified_vlm_task_prompt: true
+  vlm_prompt_style: robotwin_tlayout
+  vlm_text_rewrite: false
+  vlm_field_dropout_prob: 0.0
+  inference:
+    num_inference_timesteps: 10
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 4
+    action_temporal_smooth_alpha: 0.0    # 与部署一致：部署不做块内 EMA
+    depth_temporal_smooth_alpha: 0.0
+  timing_level: 2
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+  load_pretrained_backbones: false
+training:
+  batch_size: 8
+  max_steps: 10000
+  learning_rate: 1.0e-05
+  depth_learning_rate: 1.0e-05
+  depth_clone_learning_rate: 1.0e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 100
+  f_start: 0.1
+  cycle_length: 1000000
+  f_max: 1.0
+  f_min: 0.4
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  train_steps_per_vae_encode: 1
+  seed: 20261021
+system:
+  checkpoint_dir: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/rsi_robodojo_v1
+  log_level: INFO
+  log_interval: 10
+  save_interval: 1000
+  val_a2v: true  # 真实 24 步动作条件，3 块 RGB 验证
+  val_depth: true  # 返回预测深度，与有效 GT 深度比较
+  val_interval: 1000
+  val_num_batches: 15
+  val_full_set: true
+  val_distributed: true  # 120 窗口不补齐、不重复；每卡逐窗口推理 3 块
+  distributed_timeout_seconds: 3600  # 显式进程组超时；验证逐窗口轮次同步
+  val_seed: 20261021
+  num_workers: 4
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: RSI_robodojo_v1
+resume:
+  checkpoint_path: null
+  auto_resume_latest: false
+  reset_scheduler: false
+finetune:
+  checkpoint_path: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/rsi_robotwin_v1/rsi_robotwin_v1/RSI_robotwin_20261017_24gpu/checkpoint_step_6000
+  robot_token_copy_rows: [[16, 17]]   # aloha(16) -> robodojo_arx_x5(17)；仅 finetune 生效，续训不重复
+timing:
+  enabled: true
+  sync_cuda: false
+  interval: 10
+monitor:
+  enabled: true
+  metrics_interval: 1
+  data_dir: /data/xiongwei.zhao/thinkerwam-depth/motus_monitor_data
+  system_interval: 2.0
+  status_interval: 2.0
+  collect_system: true
+periodic_eval:
+  enabled: false

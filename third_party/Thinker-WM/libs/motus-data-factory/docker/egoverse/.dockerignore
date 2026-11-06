@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!README.md
+!requirements-training-py311.lock
+!requirements-egoverse.lock
+!validate_image.py

@@ -1,0 +1,151 @@
+# H200 CPU 冒烟配置（stage2_20260818_v1 十五源混合，含 20260819 分段文本改造）：
+# 经 data_prepare 接入层验证 indexed 混合读取（与训练完全相同的
+# create_training_data_pipeline 路径）。
+#
+# 数据源 = motus_data releases.yaml 冻结的集群 catalogs（默认解析到
+# /data/jiyuan.wang/EpisodeCatalogs）+ 每源 sampling_ranges sidecar：
+# - 10 个分段文本源（agibot_beta×2/egoverse×6/egoscale×2）用冒烟抽样 ranges
+#   （--max-episodes 200、split all、无窗口过滤，segmented text payload），
+#   目录 /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/
+# - libero×4 复用 stage2_20260815_v1 生产 ranges（ratio 2，冒烟取 train 文件），
+# - openvid 复用 stage2_20260818_v1 生产 ranges（ratio 6 + min 289 帧过滤）。
+#
+# 用法（H200，纯 CPU，motus311 环境）：
+#   python scripts/smoke_indexed_mix_cpu.py --config configs/smoke_stage2_20260818_v1_cpu.yaml --steps 16
+#   python scripts/smoke_per_source_cpu.py --config configs/smoke_stage2_20260818_v1_cpu.yaml --batches 2
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 64
+  video_width: 64
+  global_downsample_rate: 1
+  video_action_freq_ratio: 6  # 与分段文本 ranges 的 ratio 6 video_stride 布局对齐
+                              #（0812 冒烟 ranges 是 consecutive ratio 1 才用 1）
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: false
+  sources:
+  - name: agibot_beta_parallel_gripper
+    dataset: agibot_beta_parallel_gripper
+    weight: 0.628653
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/agibot_beta_parallel_gripper.ranges.sqlite
+  - name: agibot_beta_dexterous_hand
+    dataset: agibot_beta_dexterous_hand
+    weight: 0.0292421
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/agibot_beta_dexterous_hand.ranges.sqlite
+  - name: egoverse_aria_bimanual
+    dataset: egoverse_aria_bimanual
+    weight: 0.0036842
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoverse_aria_bimanual.ranges.sqlite
+  - name: egoverse_aria_left_arm
+    dataset: egoverse_aria_left_arm
+    weight: 0.0036842
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoverse_aria_left_arm.ranges.sqlite
+  - name: egoverse_aria_right_arm
+    dataset: egoverse_aria_right_arm
+    weight: 0.0036842
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoverse_aria_right_arm.ranges.sqlite
+  - name: egoverse_eva_bimanual
+    dataset: egoverse_eva_bimanual
+    weight: 0.0036842
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoverse_eva_bimanual.ranges.sqlite
+  - name: egoverse_scale_bimanual
+    dataset: egoverse_scale_bimanual
+    weight: 0.0036842
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoverse_scale_bimanual.ranges.sqlite
+  - name: egoverse_mecka_freeform_bimanual
+    dataset: egoverse_mecka_freeform_bimanual
+    weight: 0.0036844
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoverse_mecka_freeform_bimanual.ranges.sqlite
+  - name: egoscale_first500h_shard00
+    dataset: egoscale_first500h_shard00
+    weight: 0.0199133
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoscale_first500h_shard00.ranges.sqlite
+  - name: egoscale_first500h_remaining90pct
+    dataset: egoscale_first500h_remaining90pct
+    weight: 0.1800862
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/tmp/sampling_ranges/segmented_20260818_v1_smoke/egoscale_first500h_remaining90pct.ranges.sqlite
+  - name: libero_10
+    dataset: libero_10
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    adapter_options:
+      action_video_fps_ratio: 2
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260815_v1/libero_10.train.ranges.sqlite
+      windows_per_episode: 16
+  - name: libero_goal
+    dataset: libero_goal
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    adapter_options:
+      action_video_fps_ratio: 2
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260815_v1/libero_goal.train.ranges.sqlite
+      windows_per_episode: 16
+  - name: libero_object
+    dataset: libero_object
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    adapter_options:
+      action_video_fps_ratio: 2
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260815_v1/libero_object.train.ranges.sqlite
+      windows_per_episode: 16
+  - name: libero_spatial
+    dataset: libero_spatial
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    adapter_options:
+      action_video_fps_ratio: 2
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260815_v1/libero_spatial.train.ranges.sqlite
+      windows_per_episode: 16
+  - name: openvid
+    dataset: openvid
+    weight: 0.1
+    prompt_mode: text_only
+    adapter_options:
+      state_action_policy: absent
+      allow_missing_state_action: true
+      placeholder_state_action_dim: 26
+      action_loss_weight: 0.0
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260818_v1/openvid.train.ranges.sqlite
+      windows_per_episode: 16
+training:
+  batch_size: 2
+system:
+  num_workers: 0
+  pin_memory: false
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 2
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_clone_tensors: false

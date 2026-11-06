@@ -1,0 +1,41 @@
+common:
+  num_video_frames: 4
+  video_height: 16
+  video_width: 16
+  action_dim: 6
+  state_dim: 6
+  video_action_freq_ratio: 1
+
+dataset:
+  type: mix
+  batches_per_epoch: 64
+  datasets:
+    - name: synthetic_a
+      type: synthetic
+      source_dataset: group_a
+      weight: 3.0
+      length: 64
+      include_action: true
+      sleep_seconds: 0.001
+    - name: synthetic_b
+      type: synthetic
+      source_dataset: group_b
+      weight: 1.0
+      length: 32
+      include_action: false
+      sleep_seconds: 0.001
+
+training:
+  batch_size: 4
+
+system:
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 2
+  ready_batch_queue_timeout_seconds: 30
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+

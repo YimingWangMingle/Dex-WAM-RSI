@@ -1,0 +1,70 @@
+# H200 样本导出配置：为 scripts/inspect_vlm_per_dataset.py --export-samples 使用。
+#
+# 与生产配置 stage2_20260803_v2 对齐：ranges 用
+# training_dataset_config/sampling_ranges/stage2_20260731_v1/ 的 train split，
+# robotwin 源带 robotwin_main_view reader（拼接帧裁主视角）。
+#
+# 用法（H200，纯 CPU）：
+#   python scripts/inspect_vlm_per_dataset.py \
+#       --config configs/export_vlm_probe_h200.yaml \
+#       --export-samples <输出目录>
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 1
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: false
+  sources:
+  - name: robotwin_aloha
+    dataset: robotwin_aloha
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260731_v1/robotwin_aloha.train.ranges.sqlite
+  - name: robotwin_ur5
+    dataset: robotwin_ur5
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260731_v1/robotwin_ur5.train.ranges.sqlite
+  - name: robotwin_arx
+    dataset: robotwin_arx
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260731_v1/robotwin_arx.train.ranges.sqlite
+  - name: robotwin_piper
+    dataset: robotwin_piper
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260731_v1/robotwin_piper.train.ranges.sqlite
+  - name: agibot_beta
+    dataset: agibot_beta
+    weight: 1.0
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260731_v1/agibot_beta.train.ranges.sqlite
+training:
+  batch_size: 2
+system:
+  num_workers: 0
+  pin_memory: false
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 2
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_clone_tensors: false

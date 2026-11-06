@@ -1,0 +1,689 @@
+# stage2_20260812_v1：五族数据混合轮（Agibot-Beta : EgoVerse : Libero : OpenVid :
+# Robotwin = 0.5 : 0.26 : 0.02 : 0.2 : 0.02，用户 20260812 拍板）。
+# 在 stage2_20260807_v2（MotusBrain 对齐 B1/B2/B3/D1 + 20260810 修复轮）基础上
+# 仅改数据侧与配套边界，模型结构/训练超参与 0807_v2 完全一致：
+#
+# 1) 数据源（17 源；catalog 全部由 motus_data releases.yaml 解析，见
+#    libs/motus-data-factory/motus_data/releases.yaml）：
+#    - Agibot-Beta 改用 20260809-datafactory-updates 的 effector profile 拆分
+#      release（20260805_full_v1，按 HDF5 物理 schema 分 parallel_gripper /
+#      dexterous_hand 两个 catalog，robot 名随之拆分）。权重按实际 episode 数
+#      比例分配：parallel_gripper 160336/167794 → 0.477776，dexterous_hand
+#      7458/167794 → 0.022224（合计 0.5）。reader 经 release reader_options
+#      绑定 native_zscore_v1 归一化 artifacts（模型侧恒等，见注 4）。
+#    - EgoVerse×6（20260730_first6_v1 release：aria_bimanual/aria_left_arm/
+#      aria_right_arm/eva_bimanual/scale_bimanual/mecka_freeform_bimanual）
+#      各 0.26/6 ≈ 0.0433333。state/action 为 raw（release 无归一化）：
+#      aria/scale/mecka 是 observed ee pose 轨迹（非控制命令），eva_bimanual
+#      是 commanded pose+gripper——均为绝对位姿语义，B1 相对化成立。
+#      7D ee_pose = xyz + quat(w,x,y,z)（官方仓库 GaTech-RL2/EgoVerse 实锤
+#      wxyz 序：external/scale/scripts/sfs_to_egoverse_zarr.py 头注与
+#      egomimic/utils/pose_utils.py；rot_groups 用 quat_order: wxyz）。
+#    - Libero×4（20260810_full_v1 release：libero_10/goal/object/spatial）
+#      各 0.005。action 7D = [delta pos xyz, delta axis-angle(rotvec),
+#      gripper ∓1]，是增量控制命令而非绝对位姿——新增 per-robot 开关
+#      eef_relative: false（train/train.py get_robot_layout →
+#      models/ubt_wm.py _build_repr_specs）：pos 不减条件帧 state、delta
+#      旋转直接转 6D（不做 R_sᵀ·R_i 复合），推理输出端对称跳过还原；
+#      语义上与 B1 相对化后的绝对位姿目标对齐（两者都是"相对条件帧"的量）。
+#      state 8D（绝对 eef state，含二夹爪关节）与 action 7D 原生异维：
+#      源级 output_adapter: motus_native_multimodal_batch_v1（库 20260810
+#      libero 集成文档指定接法；motus_model_batch_v1 契约强制 state/action
+#      同维），模型侧 dim_map 7 项散射、state 第 8 维自动摘除。
+#      reader 侧 zscore（release 绑定 /data/chen.liao/Libero_parquet/meta/
+#      stats.json），模型侧恒等。
+#    - OpenVid（20260730_full_v1 release）0.2：纯视频源（state/action 计数
+#      为 0），ranges 由 20260812 的 build_sampling_ranges 纯视频支持构建
+#      （metadata state_action_policy=absent；selection 的 state/action
+#      索引为空）；adapter_options 四件套见 sources 节（placeholder 26 维
+#      占位 + action_loss_weight 0）。空 caption 的 episode 在 ranges 构建期
+#      剔除（missing_instruction/空白文本不进文本训练）。
+#    - RoboTwin×4 各 0.005（0807 配比 0.0625 等比缩到 0.02 总量），ranges
+#      复用 stage2_20260807 窗口过滤版。
+# 2) 双 prompt 模式（20260812 新增，utils/vlm_utils.py resolve_prompt_mode）：
+#    - OpenVid/EgoVerse：prompt_mode: text_only——原始文本直接进 VLM
+#      tokenizer+语言模型（不用首帧图、不套 Scene/Task/Action/Outcome 四字段
+#      模板）。batch 内单源（collate 强制），prompt_mode 是批级属性；
+#      source_datasets 载荷是 catalog 家族名（egoverse/openvid），
+#      resolve_prompt_mode 按家族前缀匹配同族 child 的 prompt_mode。
+#    - 其余源（agibot_beta/libero/robotwin）：缺省 vlm_image_text——首帧图 +
+#      统一四字段模板 VLM 编码（0807_v2 行为不变）。
+# 3) action 空间：统一空间 U=80 与 band 注册表不变（新机器人全部复用已注册
+#    band：eef_*_pos/gripper、hand_left/right、eef_*_rot6），热启动
+#    load_state_dict 无需 reshape。robot token 槽位 append-only：0-4 沿用
+#    0807_v2（agibot-a2-d 保留注册供 periodic_eval ewmbenchmark 借用），
+#    新增 5-14。各新机器人本地维序见 robot_names 注释（agibot-beta profile
+#    维序以 libs/motus-data-factory/motus_data/agibot_beta_profiles.py 为准；
+#    egoverse 以 motus_data/egoverse.py EGOVERSE_PROFILES 为准）。
+# 4) 归一化语义（不变更 models/action_stats.py）：新机器人均未注册
+#    ACTION_STATS——GripperHandNormPolicy 对未注册机器人恒等（spec 无
+#    q/phys 值的维恒等 + warning）。agibot-beta 两 profile 与 libero 的
+#    reader 已做全维 z-score（release reader_options 绑定统计文件），模型
+#    侧恒等即全程在 z 空间训练；egoverse 为 raw 物理量纲直通（位置为米制、
+#    四元数单位范数，首轮观察其 loss 量级；eva 夹爪维实测已在 [0,1] 开合度，
+#    与官方 CONTRIBUTING_DATA.md 规范一致）。openvid 占位维无 loss。
+# 5) ranges（/data/chen.liao/thinkerwm-pretrain/training_dataset_config/
+#    sampling_ranges/stage2_20260812_v1/，train/holdout 各一份，holdout 1%；
+#    一键构建脚本 scripts/build_full_ranges_20260812_v1.sh）：
+#    - agibot_beta 两 profile：沿用 0807 窗口过滤（静止 eps 0.02/K=12），
+#      离群阈值对齐 release guard 20（0807 旧 release guard 为 100/阈 50，
+#      新 profile release guard 20）：
+#      CAT=/data/jiyuan.wang/EpisodeCatalogs
+#      OUT=.../sampling_ranges/stage2_20260812_v1
+#      OMP_NUM_THREADS=1 python data_prepare/build_sampling_ranges.py \
+#        --catalog $CAT/_20260805/agibot_beta_effector_profiles_v1/agibot_beta_parallel_gripper.20260805_full_v1.episode_catalog.jsonl \
+#        --dataset agibot_beta --num-video-frames 48 \
+#        --action-guard-threshold 20 \
+#        --window-static-eps 0.02 --window-max-static-frames 12 --window-outlier-threshold 20 \
+#        --split train --holdout-fraction 0.01 \
+#        --output $OUT/agibot_beta_parallel_gripper.train.ranges.sqlite
+#      （dexterous_hand 换 catalog/output 名；--split holdout 再各建一份）
+#    - libero×4：z 空间同上窗口过滤（guard 20 对齐 release）：
+#      --dataset libero --action-guard-threshold 20 --window-static-eps 0.02 \
+#        --window-max-static-frames 12 --window-outlier-threshold 20
+#      catalog 取 $CAT/_20260810/libero_parquet_v1/<n>.libero_parquet_v1.episode_catalog.jsonl
+#    - egoverse×6：raw 物理量纲，窗口过滤阈值未标定，首轮不加过滤：
+#      --dataset egoverse --num-video-frames 48
+#      catalog 取 $CAT/_20260730/egoverse_first6_v1/<n>.20260730_first6_v1.episode_catalog.jsonl
+#    - openvid：纯视频源（不支持窗口过滤/--video-stride）：
+#      --dataset openvid --num-video-frames 48
+#      catalog 取 $CAT/_20260730/openvid/openvid_1m_full_20260730.episode_catalog.jsonl
+#    注意 --dataset 必须传家族名（agibot_beta/libero/egoverse/openvid）：
+#    文本选择（agibot 系 episode_context+action_segment 特例）与 metadata
+#    按它分流；窗口 ratio 四者均为 1。
+# 6) 热启动：链式全量热启动 0807_v2 最新 ckpt（启动前填
+#    finetune.checkpoint_path 或用 FINETUNE_CHECKPOINT 环境变量；k8s 启动
+#    脚本 k8s_job_script/stage2_20260812_v1.sh，镜像 v0.0.4-py311-egoverse-test
+#    + conda 环境 motus311——egoverse zarr 读取需 py3.11+zarr 3.1.5）。
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 1
+  # 统一 action 空间预留容量（模型边界 scatter 的目标维；band 注册表见
+  # dataset.unified_bands；超容量增长协议见 .AGENTS_CONTENT/03_config.md）。
+  # 0807_v2 起 80（eef_*_rot6 两 band + reserve2）；本轮新机器人全部复用
+  # 已注册 band，U 不变、热启动无 reshape。
+  unified_action_dim: 80
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  robot_names:
+    aloha-agilex:
+      action_dim: 14
+      # 本地维序（RoboTwin qpos 关节空间）：[左臂关节 0-5, 左夹爪, 右臂关节 0-5, 右夹爪]
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 0       # 每机器人 8 个可学习 token 槽位（append-only，禁复用/重排）
+      aliases:
+      - aloha-agilex
+      - aloha
+      - agilex
+    ARX-X5:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 1
+      aliases:
+      - arx-x5
+      - arx
+      - x5
+    piper:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 2
+      aliases:
+      - piper
+    ur5-wsg:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 3
+      aliases:
+      - ur5-wsg
+      - ur5
+      - wsg
+    agibot-a2-d:
+      action_dim: 26
+      # 0807_v2 起保留注册（本轮无源引用；periodic_eval ewmbenchmark 借用该名）。
+      # 本地维序（EEF 空间，每臂 13 维 packed）：[左 pos xyz, 左 rotvec, 左夹爪,
+      # 左灵巧手占位×6, 右 pos xyz, 右 rotvec, 右夹爪, 右灵巧手占位×6]；
+      # 12 个灵巧手占位维（local 7-12/20-25）置 -1 摘除；rotvec 维由
+      # unified_rot_groups 接管转 6D。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, 20, -1, -1, -1, -1, -1, -1,
+                        21, 22, 23, -1, -1, -1, 27, -1, -1, -1, -1, -1, -1]
+      unified_rot_groups:
+      - {local: [3, 4, 5], repr: rotvec, cols: [64, 65, 66, 67, 68, 69]}
+      - {local: [16, 17, 18], repr: rotvec, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 4
+      aliases:
+      - agibot-a2-d
+      - agibot
+      - agibot_beta
+    agibot-beta-parallel-gripper:
+      action_dim: 14
+      # 20260805_full_v1 effector profile（agibot_beta_profiles.py）：每臂 7 维
+      # = pos xyz + rotvec + 夹爪 1 维，左臂在前：[左 pos, 左 rotvec, 左夹爪,
+      # 右 pos, 右 rotvec, 右夹爪]。reader 侧 native_zscore_v1 全维 z-score，
+      # 模型侧恒等（未注册 ACTION_STATS）；rotvec 维由 rot group 接管转 6D。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, 20,
+                        21, 22, 23, -1, -1, -1, 27]
+      unified_rot_groups:
+      - {local: [3, 4, 5], repr: rotvec, cols: [64, 65, 66, 67, 68, 69]}
+      - {local: [10, 11, 12], repr: rotvec, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 5
+      aliases:
+      - agibot-beta-parallel-gripper
+    agibot-beta-dexterous-hand:
+      action_dim: 24
+      # 20260805_full_v1 effector profile：每臂 12 维 = pos xyz + rotvec +
+      # 灵巧手 6 维（无独立夹爪维），左臂在前：[左 pos, 左 rotvec, 左手×6,
+      # 右 pos, 右 rotvec, 右手×6]。灵巧手维映射 hand_left/hand_right band
+      # （0807 注册的 agibot 占位 band 本轮起由该 profile 正式使用）。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, 28, 29, 30, 31, 32, 33,
+                        21, 22, 23, -1, -1, -1, 34, 35, 36, 37, 38, 39]
+      unified_rot_groups:
+      - {local: [3, 4, 5], repr: rotvec, cols: [64, 65, 66, 67, 68, 69]}
+      - {local: [15, 16, 17], repr: rotvec, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 6
+      aliases:
+      - agibot-beta-dexterous-hand
+    libero-panda:
+      action_dim: 7
+      # 本地维序（LIBERO parquet，单臂）：[delta pos xyz, delta axis-angle
+      # (rotvec), gripper ∓1]——增量控制命令，不是绝对位姿（reader zscore，
+      # 模型侧恒等）。eef_relative: false：pos 不减条件帧 state、delta 旋转
+      # 直接转 6D（不做 R_sᵀ·R_i 复合），推理输出端对称跳过还原。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, 20]
+      unified_rot_groups:
+      - {local: [3, 4, 5], repr: rotvec, cols: [64, 65, 66, 67, 68, 69]}
+      eef_relative: false
+      robot_token_index: 7
+      aliases:
+      - libero-panda
+      - libero
+    egoverse-aria-bimanual:
+      action_dim: 14
+      # 本地维序（key 序 left.obs_ee_pose, right.obs_ee_pose）：[左 xyz+quat,
+      # 右 xyz+quat]；quat 为 wxyz 序（官方仓库实锤，见头注）。raw 物理量纲
+      # （release 无归一化），绝对位姿语义（observed 轨迹），B1 相对化成立。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, -1,
+                        21, 22, 23, -1, -1, -1, -1]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, quat_order: wxyz, cols: [64, 65, 66, 67, 68, 69]}
+      - {local: [10, 11, 12, 13], repr: quat, quat_order: wxyz, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 8
+      aliases:
+      - egoverse-aria-bimanual
+    egoverse-aria-left-arm:
+      action_dim: 7
+      # 单臂 7D = xyz + quat(wxyz)，映射左臂 band。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, -1]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, quat_order: wxyz, cols: [64, 65, 66, 67, 68, 69]}
+      robot_token_index: 9
+      aliases:
+      - egoverse-aria-left-arm
+    egoverse-aria-right-arm:
+      action_dim: 7
+      # 单臂 7D = xyz + quat(wxyz)，映射右臂 band。
+      unified_dim_map: [21, 22, 23, -1, -1, -1, -1]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, quat_order: wxyz, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 10
+      aliases:
+      - egoverse-aria-right-arm
+    egoverse-eva-bimanual:
+      action_dim: 16
+      # 本地维序（key 序 left pose, left gripper, right pose, right gripper）：
+      # [左 xyz+quat, 左夹爪, 右 xyz+quat, 右夹爪]；quat wxyz 序。action 为
+      # commanded pose+gripper（真实控制命令候选），raw 物理量纲。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, -1, 20,
+                        21, 22, 23, -1, -1, -1, -1, 27]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, quat_order: wxyz, cols: [64, 65, 66, 67, 68, 69]}
+      - {local: [11, 12, 13, 14], repr: quat, quat_order: wxyz, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 11
+      aliases:
+      - egoverse-eva-bimanual
+    egoverse-scale-bimanual:
+      action_dim: 14
+      # 同 egoverse-aria-bimanual：[左 xyz+quat(wxyz), 右 xyz+quat(wxyz)]，
+      # raw observed 轨迹（非控制命令）。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, -1,
+                        21, 22, 23, -1, -1, -1, -1]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, quat_order: wxyz, cols: [64, 65, 66, 67, 68, 69]}
+      - {local: [10, 11, 12, 13], repr: quat, quat_order: wxyz, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 12
+      aliases:
+      - egoverse-scale-bimanual
+    egoverse-mecka-freeform-bimanual:
+      action_dim: 14
+      # 同 egoverse-aria-bimanual（原生 360x640，reader pad 到 480x640）。
+      unified_dim_map: [14, 15, 16, -1, -1, -1, -1,
+                        21, 22, 23, -1, -1, -1, -1]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, quat_order: wxyz, cols: [64, 65, 66, 67, 68, 69]}
+      - {local: [10, 11, 12, 13], repr: quat, quat_order: wxyz, cols: [70, 71, 72, 73, 74, 75]}
+      robot_token_index: 13
+      aliases:
+      - egoverse-mecka-freeform-bimanual
+    openvid-null:
+      action_dim: 26
+      # 纯视频源占位（catalog robot=openvid-null；adapter 按
+      # placeholder_state_action_dim=26 补全零 state/action +
+      # action_loss_weight=0）：全部本地维 -1 摘除，不进 scatter/loss。
+      unified_dim_map: [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+      robot_token_index: 14
+      aliases:
+      - openvid-null
+      - openvid
+  # 统一 action 空间语义槽位注册表（append-only 协议：只增不改不挪）。
+  # 每机器人的 dataset.robot_names[*].unified_dim_map 逐维显式声明本地维 →
+  # 统一空间列索引；get_robot_layout 校验每列落在某个已注册 band 内——跨
+  # 机器人共享同列即显式语义对齐。本轮新机器人全部复用已注册 band，
+  # 注册表不变（hand_left/hand_right 由 agibot-beta-dexterous-hand 正式启用）。
+  unified_bands:
+    joint_left_arm: [0, 6]      # 关节空间（rad，基座→末端）：robotwin 四本体左臂
+    joint_left_gripper: [6, 7]  # 左夹爪（关节域）
+    joint_right_arm: [7, 13]
+    joint_right_gripper: [13, 14]
+    eef_left_pos: [14, 17]      # EEF 位置 xyz：agibot / egoverse / libero(delta) 左臂
+    eef_left_rotvec: [17, 20]   # EEF 姿态（rotvec）：agibot 左臂（0807 前使用；B2 后改由 rot6 band 接管，注册保留）
+    eef_left_gripper: [20, 21]  # EEF 夹爪开合：agibot / libero / egoverse-eva 左
+    eef_right_pos: [21, 24]
+    eef_right_rotvec: [24, 27]
+    eef_right_gripper: [27, 28]
+    hand_left: [28, 34]         # 灵巧手 6 维：agibot-beta-dexterous-hand 左（0807 前为 agibot 占位）
+    hand_right: [34, 40]
+    eef_left_quat: [40, 44]     # EEF 姿态（quat）：robotmind tianyi/tienkung 左臂（同上调任 rot6，注册保留）
+    eef_right_quat: [44, 48]
+    eef_left_rot3: [48, 51]     # EEF 姿态（3 维姿态）：robotmind ark/arkmobile 左臂（同上）
+    eef_right_rot3: [51, 54]
+    base_twist: [54, 60]        # 底盘 twist 6 维：robotmind arkmobile
+    reserve: [60, 64]           # 预留容量（append-only 保留；0807 注册）
+    eef_left_rot6: [64, 70]     # EEF 姿态（6D 旋转，B2 统一训练目标）：左臂（各本体共享 = 语义对齐）
+    eef_right_rot6: [70, 76]    # 右臂
+    reserve2: [76, 80]          # 预留容量（新语义先细分注册再使用）
+  # indexed（Catalog/SamplePool）数据源。catalog 由 motus_data releases.yaml
+  # 默认解析（/data/jiyuan.wang/EpisodeCatalogs 下已冻结 release）。每源 pool
+  # spec 为 sampling_ranges：运行时内存动态生成随机窗口（不落盘 pool 文件），
+  # 默认 consecutive 布局（视频连续 49 帧 + 1 state + 48 动作帧）。新源 ranges
+  # 为 stage2_20260812_v1 目录（构建命令见头注 5）；robotwin×4 复用
+  # stage2_20260807 窗口过滤版。
+  sources:
+  - name: agibot_beta_parallel_gripper
+    dataset: agibot_beta_parallel_gripper
+    # 0.5 × 160336/167794（按 effector profile 拆分的实际 episode 数比例）
+    weight: 0.477776
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/agibot_beta_parallel_gripper.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/agibot_beta_parallel_gripper.holdout.ranges.sqlite
+  - name: agibot_beta_dexterous_hand
+    dataset: agibot_beta_dexterous_hand
+    # 0.5 × 7458/167794
+    weight: 0.022224
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/agibot_beta_dexterous_hand.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/agibot_beta_dexterous_hand.holdout.ranges.sqlite
+  - name: egoverse_aria_bimanual
+    dataset: egoverse_aria_bimanual
+    weight: 0.0433333            # 0.26/6
+    prompt_mode: text_only       # 纯文本进 VLM tokenizer+语言模型（无首帧图/四字段模板）
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_aria_bimanual.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_aria_bimanual.holdout.ranges.sqlite
+  - name: egoverse_aria_left_arm
+    dataset: egoverse_aria_left_arm
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_aria_left_arm.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_aria_left_arm.holdout.ranges.sqlite
+  - name: egoverse_aria_right_arm
+    dataset: egoverse_aria_right_arm
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_aria_right_arm.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_aria_right_arm.holdout.ranges.sqlite
+  - name: egoverse_eva_bimanual
+    dataset: egoverse_eva_bimanual
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_eva_bimanual.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_eva_bimanual.holdout.ranges.sqlite
+  - name: egoverse_scale_bimanual
+    dataset: egoverse_scale_bimanual
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_scale_bimanual.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_scale_bimanual.holdout.ranges.sqlite
+  - name: egoverse_mecka_freeform_bimanual
+    dataset: egoverse_mecka_freeform_bimanual
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_mecka_freeform_bimanual.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/egoverse_mecka_freeform_bimanual.holdout.ranges.sqlite
+  - name: libero_10
+    dataset: libero_10
+    weight: 0.005                # 0.02/4
+    # state 8D/action 7D 原生异维（库 motus_model_batch_v1 契约强制同维）：
+    # 用 native multimodal profile（库 20260810 libero 集成文档的指定接法），
+    # 模型侧 dim_map 7 项散射、state 第 8 维（第二夹爪关节）自动摘除
+    output_adapter: motus_native_multimodal_batch_v1
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_10.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_10.holdout.ranges.sqlite
+  - name: libero_goal
+    dataset: libero_goal
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1   # 同 libero_10
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_goal.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_goal.holdout.ranges.sqlite
+  - name: libero_object
+    dataset: libero_object
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1   # 同 libero_10
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_object.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_object.holdout.ranges.sqlite
+  - name: libero_spatial
+    dataset: libero_spatial
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1   # 同 libero_10
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_spatial.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/libero_spatial.holdout.ranges.sqlite
+  - name: openvid
+    dataset: openvid
+    weight: 0.2
+    prompt_mode: text_only       # 纯文本 caption 进 VLM tokenizer+语言模型
+    adapter_options:
+      # 纯视频源四件套：state/action 缺省补 26 维零占位、action loss 置零
+      state_action_policy: absent
+      allow_missing_state_action: true
+      placeholder_state_action_dim: 26
+      action_loss_weight: 0.0
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/openvid.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1/openvid.holdout.ranges.sqlite
+  - name: robotwin_aloha
+    dataset: robotwin_aloha
+    weight: 0.005                # 0.02/4（0807 的 0.0625 等比缩放）
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_aloha.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_aloha.holdout.ranges.sqlite
+  - name: robotwin_ur5
+    dataset: robotwin_ur5
+    weight: 0.005
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_ur5.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_ur5.holdout.ranges.sqlite
+  - name: robotwin_arx
+    dataset: robotwin_arx
+    weight: 0.005
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_arx.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_arx.holdout.ranges.sqlite
+  - name: robotwin_piper
+    dataset: robotwin_piper
+    weight: 0.005
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_piper.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_piper.holdout.ranges.sqlite
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    # 模态 dropout（评审 #4 决策 3/4）：video/action/prompt 三模态各自独立概率、
+    # batch 级每 update step 重采（被 drop 模态不进网络、loss 置零；video 与
+    # action 同 drop 时保底留一）；independent_modality_noise=true 使同批
+    # video/action 独立采样 timestep/σ，训练模态缺失鲁棒性。
+    modality_dropout_video: 0.1
+    modality_dropout_action: 0.1
+    modality_dropout_prompt: 0.1
+    independent_modality_noise: true
+    # D1（20260811 对齐 MotusBrain，per-modality timeshift video=6/action=1）：
+    # flow_matching σ 调度的 video 侧 shift（训练 σ 采样与推理 video σ 网格
+    # 共用；原 Wan2.2 TI2V 官方 5.0，本轮按论文取 6.0）；action 侧用下方
+    # action_flow_shift（论文 action=1，更均匀）。改动必须训练/推理保持一致，
+    # 勿两侧分别调。
+    flow_shift: 6.0
+    # action 独立 timeshift（独立 scheduler 采样 + 推理 action σ 网格；需
+    # independent_modality_noise=true；null/缺省 = 跟随 flow_shift 旧行为）
+    action_flow_shift: 1.0
+    # B1/B2/B3（20260811 对齐 MotusBrain，详见 0807_v2 头注）：
+    # B3：仅夹爪/灵巧手维归一化 [-1,1]，其余维保持物理量纲（"zscore" = 旧
+    # 全维 per-robot z-score）。本轮新机器人未注册 ACTION_STATS → 恒等
+    # （reader 侧 z-score 的源全程在 z 空间；egoverse raw 直通），见头注 4。
+    action_norm_policy: gripper_hand_minmax
+    # B1/B2：EEF 位姿维相对条件帧 state + 统一 6D 旋转训练目标
+    # （"absolute_native" = 旧绝对坐标 + 原生旋转表示）；libero 经
+    # eef_relative: false 跳过相对化（delta 命令本身已是相对量），见头注 1。
+    action_target_repr: relative_eef_rot6
+    # 【20260810 修复轮】action 侧训练改造（修复 #3a/#3c/#4，详见
+    # stage2_20260807_v1.yaml 头注；与 σ shift 语义无关，自动兼容）：
+    # σ 采样 cutoff（π0 式，去 σ=1.0 纯噪声端点；仅 action 侧）
+    action_sigma_cutoff: 0.999
+    # Min-SNR-γ 式 action loss 加权（v-prediction 变体 w=min(SNR,γ)/(1+SNR)，
+    # batch 内归一到均值 1；"none" 关闭）
+    action_loss_weighting: min_snr
+    action_loss_snr_gamma: 5.0
+    # 时序相关噪声（rolling/pyramid 式；训练加噪与推理初始噪声同模式，
+    # "iid" 关闭）
+    action_temporal_noise: pyramid
+    action_temporal_noise_scales: [1, 4, 16]
+  # 统一 VLM task prompt：train/sample/eval 用 t5 原始任务文本经
+  # utils.vlm_utils.build_vlm_task_message 重建 vlm 消息（Scene/Task/Action/Outcome 四字段）。
+  # prompt_mode: text_only 的源（openvid/egoverse）不套该模板，原始文本直通
+  # VLM tokenizer+语言模型（见头注 2）。
+  unified_vlm_task_prompt: true
+  inference:
+    num_inference_timesteps: 50    # 与 shift 调度配套（官方 50 步）
+    guidance_scale: 5.0    # CFG 引导强度（评审 #6；Wan2.2 TI2V 官方 guide_scale=5.0），仅作用于 video 速度场，配合 condition_dropout_prob 训练出的无条件分支；1.0 = 关闭
+    # 【20260810 修复轮】action 侧推理参数（修复 #1/#3b/#9c）：
+    action_guidance_scale: 1.0    # 修复 #1：action 不做 CFG（π0/Diffusion Policy 惯例；!=1.0 仅为消融对照保留）
+    action_num_inference_timesteps: 10    # 修复 #9c：action 独立去噪步数（UWM 式 per-modality σ 网格；D1 后该网格用 action_flow_shift=1.0）
+    action_temporal_smooth_alpha: 0.5    # 修复 #3b：推理时序指数平滑强度（0 = 关闭；0.5 为首轮对照取值，可按 jitter 比调）
+  timing_level: 2    # 模型内部耗时检查点级别: 1=分支级, 2=+逐block(每block两次CUDA同步; 5B模型每步约60次同步, 占比可忽略; 不需要时改回1)
+  condition_dropout_prob: 0.1    # 文本条件 dropout（评审 #6）：10% 样本的 VLM 文本替换为空文本，训练无条件分支，使 CFG 可用；推理侧用 model.inference.guidance_scale>1 启用
+  vlm_field_dropout_prob: 0.1    # VLM 四字段（Scene/Task/Action/Outcome）逐样本 dropout（计划 §2）：被 drop 字段从统一 prompt 格式指令整字段移除、保底留 1；随消息重建重采
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+training:
+  batch_size: 16
+  max_steps: 300000
+  learning_rate: 1.25e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 0
+  cycle_length: 1000000
+  f_max: 0.99
+  f_min: 0.4
+  grad_clip_norm: 0.5    # 须与 configs/zero1.json 的 gradient_clipping 一致（修复 #2：ZeRO-1 下实际裁剪在 engine 侧，本键用于日志记录与本地非 deepspeed 路径）
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  # 每个 batch VAE encode 一次后、按不同噪声独立参数更新的步数（默认 1=不复用）。
+  # 取数/VAE encode 摊薄到 N 个 optimizer step；global_step/LR 调度仍按 step 计，
+  # 数据消耗相应慢 N 倍（同一 batch 被连续更新 N 次，噪声/timestep 每步重采样）。
+  train_steps_per_vae_encode: 10
+system:
+  checkpoint_dir: ./checkpoints
+  log_level: INFO
+  log_interval: 10
+  save_interval: 1000000000
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  # 非有限全量扫描（参数/梯度逐 tensor isfinite + 跨 rank allreduce）降频到
+  # 每 50 步（评审 #12）：1=每步（旧行为，5B 模型每步上千次 CUDA 同步）；
+  # 间隔步不拦截非有限梯度（loss 标量检查仍每步执行）；MOTUS_NONFINITE_FAIL_FAST=0
+  # 时扫描整体关闭。
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: stage2_20260812_v1_five_family_mix_bs16_300k
+resume:
+  # finetune 热启动（仅加载权重），不做完整续训
+  checkpoint_path: null
+  auto_resume_latest: false
+  # 弹性续训不重置 scheduler（评审 #13）：auto-resume 接着原 LR 计划走、不重新
+  # warmup；首次 finetune 热启动走下方 finetune.checkpoint_path 仅权重路径，本键不生效。
+  reset_scheduler: false
+finetune:
+  # 链式全量热启动（用户决策：不丢弃/不重置任何权重，含 action 分支与 uni
+  # 共享中间块；U=80 不变，无需 reshape）。
+  # 【启动前必填】0807_v2 最新 ckpt 路径（或经 FINETUNE_CHECKPOINT 环境变量
+  # 覆盖；k8s 启动脚本 k8s_job_script/stage2_20260812_v1.sh 同位占位）。
+  checkpoint_path: null
+monitor:
+  # 训练监控（monitor/ 库）：写 append-only 分块 JSONL 到
+  # <仓库上级目录>/motus_monitor_data/，本机 web 服务经 SSH 增量同步。
+  # 关闭：enabled: false 或环境变量 MOTUS_MONITOR_ENABLED=0。
+  enabled: true
+  metrics_interval: 1  # monitor 指标记录间隔（步）：1=每步都记；与 console/TB 的 log_interval 无关
+  data_dir: null          # null = 默认目录（可用 $MOTUS_MONITOR_DIR 覆盖）
+  system_interval: 2.0    # 每节点系统采样间隔（秒，local_rank0 采样）
+  status_interval: 2.0    # status.json 最小重写间隔（秒）
+  collect_system: true
+periodic_eval:
+  # 周期性定集评测（periodic_eval/ 包）：每 interval_steps 步、每个 rank 各评
+  # 一个固定 batch（batch size = training.batch_size），每轮内容/数据集配比
+  # 固定。素材在训练启动时由 CPU-only 后台子进程预解码到 cache_dir
+  # （manifest + sha256，跨训练任务复用），训练前台零解码。产物写 monitor
+  # run_dir 的 eval/（索引流 + compare.mp4/actions.png/meta.json），
+  # Web UI「eval 评估」tab 展示。全流程失败自吞，不影响训练。
+  enabled: true
+  interval_steps: 1000
+  num_inference_steps: null     # null = model.inference.num_inference_timesteps（50）
+  seed: 20260805                # 评测窗口/生成噪声种子（固定 → 每轮内容一致）
+  vlm_generate: true            # 旁路 greedy 生成 VLM 文本（Scene/Task/Action/Outcome）
+  vlm_max_new_tokens: 128
+  fps: 6
+  keep_rounds: 20               # 集群侧只保留最近 20 轮媒体（本机已同步副本不受影响）
+  save_separate_videos: false   # 默认只存 compare 三联屏；true 另存 gt/pred.mp4
+  cache_dir: /data/chen.liao/thinkerwm-pretrain/periodic_eval_cache
+  # 各评测源权重（决定各 rank batch 来源配比，largest-remainder 确定性分配）：
+  # 缺省 = 训练权重（17 源，见 dataset.sources）+ ewmbenchmark 0.25；
+  # 在此显式列出可覆盖，权重 <= 0 排除该源。
+  source_weights:
+    ewmbenchmark: 0.25
+  ewmbenchmark:
+    enabled: true
+    root: /data/chen.liao/EWMBenchmark
+    robot_name: agibot-a2-d     # EWM 无 action/state 语义，借用已注册机器人名

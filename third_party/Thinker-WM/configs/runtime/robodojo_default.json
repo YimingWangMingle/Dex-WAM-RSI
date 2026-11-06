@@ -1,0 +1,8 @@
+{
+  "num_blocks": 1,
+  "execute_steps": 8,
+  "continuity": {
+    "mode": "ema",
+    "ema_alpha": 0.5
+  }
+}

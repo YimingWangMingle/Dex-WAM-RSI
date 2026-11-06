@@ -1,0 +1,33 @@
+# RoboDojo field map 模板（schema_version 1）。
+# 先在真实 HDF5 上运行 scripts/audit_robodojo_hdf5.py，按审计报告逐项填写；
+# 任何字段都不允许猜测，缺失的必填键会直接报错（data_prepare/robodojo_core.py）。
+schema_version: 1
+control_hz: <float>                         # state/action 行的原生频率
+rgb:
+  encoding: uint8_thwc                      # uint8_thwc | uint8_tchw | encoded_bytes
+  views:
+    head: <h5 path>
+    left_wrist: <h5 path>
+    right_wrist: <h5 path>
+depth:                                      # 可选；RGB-only 部署时深度只作训练标签
+  unit_to_mm: <float>
+  invalid_values: [0]
+  views:
+    head: <h5 path>
+    left_wrist: <h5 path>
+    right_wrist: <h5 path>
+state:
+  path: <h5 path>
+  columns: null                             # [start, end] 或 null
+  feature_names: null
+action:
+  path: <h5 path>
+  semantics: <abs_joint | delta_eef | ...>  # 决定 runtime 的 tracking_fn 与后处理
+  columns: null
+  feature_names: null
+frame_rows: null                            # 视频与控制频率不同时：{path: <frame -> row 映射>}
+instruction: {attr: <h5 attr>}              # 或 {path: <h5 path>} / null
+scene: {parent_dir: true}                   # 或 {attr: <h5 attr>}；按场景划分 train/val
+layout:                                     # RGB 双线性、depth 最近邻，用同一布局拼接
+  rows: [[head], [left_wrist, right_wrist]]
+  row_hw: [[<h>, <w>], [<h>, <w>]]

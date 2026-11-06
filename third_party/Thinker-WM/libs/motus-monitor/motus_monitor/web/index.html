@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motus 训练监控</title>
+<script>
+/* 首帧前应用持久化主题，避免闪烁（无外部依赖） */
+(function () {
+  var theme = "light";
+  try { theme = localStorage.getItem("motus.monitor.theme") || "light"; } catch (e) {}
+  document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-dot"></span>Motus Monitor</div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="overview">总览</button>
+    <button class="tab" data-tab="curves">曲线</button>
+    <button class="tab" data-tab="timing">耗时</button>
+    <button class="tab" data-tab="tree">训练树</button>
+    <button class="tab" data-tab="eval">评估</button>
+    <button class="tab" data-tab="dataset">训练集</button>
+    <button class="tab" data-tab="sampling">采样覆盖</button>
+    <button class="tab" data-tab="taskmetrics">任务诊断</button>
+  </nav>
+  <div class="topbar-right">
+    <span id="sync-progress" class="sync-progress hidden"><span class="sync-progress-fill"></span><span class="sync-progress-text"></span></span>
+    <span id="sync-status" class="sync-status"></span>
+    <button id="data-root-btn" class="data-root-btn" title="监控查看路径（点击切换）">…</button>
+    <span id="conn-status" class="conn-status" title="实时连接状态">未连接</span>
+    <span id="user-chip" class="user-chip hidden" title="当前登录用户"></span>
+    <button id="logout-btn" class="btn hidden" title="退出登录">登出</button>
+    <button id="theme-toggle" class="theme-toggle" title="切换亮/暗主题">☀</button>
+  </div>
+</header>
+
+<!-- 监控查看路径选择弹窗（本机只读浏览 / 经 SSH 浏览远端 H-Server） -->
+<div id="root-picker" class="modal-overlay hidden">
+  <div class="modal-card card">
+    <div class="panel-head">
+      <span>选择监控查看路径</span>
+      <span class="root-picker-modes">
+        <button id="root-picker-mode-local" class="btn root-picker-mode">本机</button>
+        <button id="root-picker-mode-remote" class="btn root-picker-mode hidden">远端（H-Server）</button>
+      </span>
+      <button id="root-picker-close" class="btn">关闭</button>
+    </div>
+    <div id="root-picker-desc" class="root-picker-desc muted">切换查看根 = 选择查看哪个监控数据目录下的 run 记录（只读）。不影响各同步任务的写入目录，也不影响训练。</div>
+    <div id="root-picker-known" class="root-picker-known hidden">
+      <div class="root-picker-known-head muted">已发现的监控数据目录（点击直接切换）</div>
+      <div id="root-picker-known-list"></div>
+    </div>
+    <div id="root-picker-remote-known" class="root-picker-known hidden">
+      <div class="root-picker-known-head muted">远端（H-Server）已发现的监控数据目录（点击加入同步）</div>
+      <div id="root-picker-remote-known-list"></div>
+    </div>
+    <div class="root-picker-bar">
+      <button id="root-picker-up" class="btn">‹ 上级</button>
+      <span id="root-picker-cur" class="mono root-picker-cur"></span>
+    </div>
+    <div id="root-picker-list" class="root-picker-list"></div>
+    <div class="root-picker-foot">
+      <span id="root-picker-hint" class="muted"></span>
+      <button id="root-picker-choose" class="btn">选择此目录</button>
+    </div>
+  </div>
+</div>
+
+<main class="main">
+
+  <!-- ============ 总览 ============ -->
+  <section id="tab-overview" class="tab-page active">
+    <div class="overview-head">
+      <div id="run-selector" class="run-selector"></div>
+      <div id="run-meta" class="run-meta"></div>
+    </div>
+    <div class="card progress-card">
+      <div class="progress-head">
+        <span id="progress-label" class="mono">—</span>
+        <span id="progress-eta" class="mono muted"></span>
+      </div>
+      <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+    </div>
+    <div id="status-cards" class="card-grid"></div>
+
+    <h3 class="section-title">系统负载</h3>
+    <div id="system-cards" class="system-grid"></div>
+
+    <h3 class="section-title">事件流</h3>
+    <div id="event-list" class="card event-list"></div>
+  </section>
+
+  <!-- ============ 曲线（阶段 3A：单 run 指标 / 多 run 对比 两个子视图共用控件条） ============ -->
+  <section id="tab-curves" class="tab-page">
+    <button id="open-task-loss" class="btn" style="margin-bottom:16px">查看各任务 loss / 验证指标 →</button>
+    <div class="ds-mode-bar subview-bar">
+      <button class="btn ds-mode-btn active" data-cmode="single">单 run 指标</button>
+      <button class="btn ds-mode-btn" data-cmode="compare">多 run 对比</button>
+    </div>
+    <div class="card controls-card">
+      <div class="control-group metric-checks" id="metric-checks"></div>
+      <div class="control-group">
+        <label class="ctl-label">EMA 平滑 <span id="ema-val" class="mono">0.00</span></label>
+        <input type="range" id="ema-slider" min="0" max="0.99" step="0.01" value="0">
+        <label class="check"><input type="checkbox" id="logy-toggle"> log-y</label>
+        <button id="zoom-reset" class="btn">复位缩放</button>
+        <span id="history-info" class="muted history-info"></span>
+      </div>
+    </div>
+    <div id="curves-single-view">
+      <div class="card chart-card">
+        <div class="chart-title">训练指标（x = step，悬停查看数值，滚轮缩放，拖拽平移，双击复位）</div>
+        <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-title">按数据源拆分的 total_loss（散点 + 各源 EMA 线）</div>
+        <div class="chart-wrap"><canvas id="source-chart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-title">系统曲线 <span id="sys-node-tabs" class="node-tabs"></span></div>
+        <div class="chart-wrap"><canvas id="system-chart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-title">GPU 利用率（按卡，x = 时间，默认近期视窗，统计覆盖全量历史） <button id="gpu-view-toggle" class="btn">显示全部</button> <span id="gpu-hint" class="muted"></span></div>
+        <div class="chart-wrap"><canvas id="gpu-chart"></canvas></div>
+        <div id="gpu-stats" class="gpu-stats"></div>
+      </div>
+    </div>
+    <div id="curves-compare-view" class="hidden">
+      <div class="compare-layout">
+        <div class="card compare-runs-panel">
+          <div class="panel-head"><span>选择对比的 run</span><button id="cmp-reload" class="btn">重新加载历史</button></div>
+          <div id="compare-run-list" class="compare-run-list"></div>
+        </div>
+        <div class="card chart-card compare-chart-card">
+          <div class="chart-title">多 run 指标叠加（x = step，悬停查看数值，滚轮缩放，拖拽平移，双击复位）</div>
+          <div class="chart-wrap"><canvas id="compare-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 耗时 ============ -->
+  <section id="tab-timing" class="tab-page">
+    <div class="card">
+      <div class="chart-title">阶段耗时统计（最近 100 步均值，检查点集合随代码版本自动发现） <span id="timing-scope" class="node-tabs"></span></div>
+      <div id="timing-totals" class="timing-totals"></div>
+      <table class="data-table" id="timing-table"></table>
+      <div class="share-bar-wrap" id="share-bar"></div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-title">逐步阶段耗时堆叠（x = step，悬停查看各阶段）</div>
+      <div class="chart-wrap"><canvas id="timing-chart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ============ 训练树（阶段 3B：训练树 / 基准矩阵 两个子视图） ============ -->
+  <section id="tab-tree" class="tab-page">
+    <div class="ds-mode-bar subview-bar">
+      <button class="btn ds-mode-btn active" data-tmode="tree">训练树</button>
+      <button class="btn ds-mode-btn" data-tmode="bench">基准矩阵</button>
+    </div>
+    <div id="tree-subview" class="tree-layout">
+      <div class="card tree-panel">
+        <div class="panel-head"><span>训练树</span><button id="tree-refresh" class="btn">刷新</button></div>
+        <div id="tree-view" class="tree-view"></div>
+      </div>
+      <div class="card tree-detail" id="ckpt-detail">
+        <div class="empty-hint">在左侧选择一个 checkpoint 查看详情</div>
+      </div>
+    </div>
+    <div id="bench-subview" class="hidden">
+      <div class="card">
+        <div class="panel-head"><span>基准矩阵（点击单元格跳转到训练树详情）</span><button id="bench-refresh" class="btn">刷新</button></div>
+        <div id="bench-matrix" class="bench-matrix"></div>
+      </div>
+      <div class="card">
+        <div class="panel-head"><span>LLM API 说明</span><button id="llm-toggle" class="btn">展开</button></div>
+        <pre id="llm-help" class="llm-help hidden"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 评估 ============ -->
+  <section id="tab-eval" class="tab-page">
+    <button id="open-task-eval" class="btn" style="margin-bottom:16px">按任务汇总 RGB / Depth / Action →</button>
+    <div class="card controls-card">
+      <div class="control-group eval-controls">
+        <select id="eval-run" class="eval-select" title="选择 run"></select>
+        <button id="eval-round-prev" class="btn">‹ 上一轮</button>
+        <select id="eval-round" class="eval-select" title="评测轮（step）"></select>
+        <button id="eval-round-next" class="btn">下一轮 ›</button>
+        <select id="eval-source" class="eval-select" title="按数据源过滤"><option value="">全部源</option></select>
+        <button id="eval-refresh" class="btn">刷新</button>
+        <details id="eval-y-editor" class="eval-y-editor">
+          <summary class="btn" title="action 曲线 y 轴范围：按维度 band 固定（同一 dim 跨 eps/数据集一致），超出部分裁剪不显示；在此按 band 自定义恢复显示">y 轴范围</summary>
+          <div class="eval-y-panel">
+            <div class="eval-y-row"><span class="eval-y-band">pos</span>
+              <input id="eval-y-pos-min" type="number" step="any"><span>~</span>
+              <input id="eval-y-pos-max" type="number" step="any"></div>
+            <div class="eval-y-row"><span class="eval-y-band">rot6</span>
+              <input id="eval-y-rot6-min" type="number" step="any"><span>~</span>
+              <input id="eval-y-rot6-max" type="number" step="any"></div>
+            <div class="eval-y-row"><span class="eval-y-band">gripper</span>
+              <input id="eval-y-gripper-min" type="number" step="any"><span>~</span>
+              <input id="eval-y-gripper-max" type="number" step="any"></div>
+            <div class="eval-y-row"><span class="eval-y-band">其他</span>
+              <input id="eval-y-other-min" type="number" step="any"><span>~</span>
+              <input id="eval-y-other-max" type="number" step="any"></div>
+            <div class="eval-y-actions">
+              <button id="eval-y-apply" class="btn">应用</button>
+              <button id="eval-y-reset" class="btn">重置默认</button>
+            </div>
+          </div>
+        </details>
+        <span id="eval-hint" class="muted"></span>
+      </div>
+    </div>
+    <div id="eval-summary"></div>
+    <div id="eval-samples"></div>
+  </section>
+
+  <!-- ============ 训练集 ============ -->
+  <section id="tab-dataset" class="tab-page">
+    <div class="ds-layout">
+      <div class="ds-side card">
+        <div class="ds-mode-bar">
+          <button class="btn ds-mode-btn active" data-dsmode="browse">数据集浏览</button>
+          <button class="btn ds-mode-btn" data-dsmode="slices">训练切片</button>
+        </div>
+        <div id="ds-status" class="ds-status"></div>
+        <div id="ds-browse-panel">
+          <div class="panel-head"><span>数据集</span></div>
+          <div id="ds-datasets" class="ds-datasets"></div>
+          <div id="ds-ep-browser" class="hidden">
+            <div id="ds-eptree" class="ds-eptree"></div>
+            <div class="ds-ep-toolbar">
+              <input id="ds-ep-search" type="search" placeholder="搜索 episode id…" />
+              <button id="ds-ep-search-btn" class="btn">搜索</button>
+            </div>
+            <div id="ds-ep-scope" class="ds-ep-scope hidden"></div>
+            <div id="ds-episodes" class="ds-episodes"></div>
+            <div class="ds-pager">
+              <button id="ds-ep-prev" class="btn">上一页</button>
+              <span id="ds-ep-page-info" class="ds-pager-info"></span>
+              <button id="ds-ep-next" class="btn">下一页</button>
+            </div>
+          </div>
+        </div>
+        <div id="ds-slices-panel" class="hidden">
+          <div class="panel-head"><span>训练切片（点击解码）</span></div>
+          <select id="ds-slice-run" class="ds-slice-run"></select>
+          <label class="check ds-lineage-toggle" title="沿 ckpt 谱系（parent 链）聚合本 run 与全部祖先 run 的切片统计">
+            <input type="checkbox" id="ds-slice-lineage" /> 历史累计（含祖先 run）
+          </label>
+          <div id="ds-ckpt-section">
+            <div class="ds-subhead">ckpt 数据配比（点击过滤）</div>
+            <div id="ds-slice-legend" class="ds-legend"></div>
+            <div id="ds-slice-ckpts" class="ds-ckpts"></div>
+          </div>
+          <div id="ds-slice-pie-wrap" class="ds-pie-wrap"></div>
+          <div id="ds-slice-stats" class="ds-slice-stats"></div>
+          <div id="ds-slice-coverage" class="ds-coverage"></div>
+          <div class="ds-ep-toolbar">
+            <select id="ds-slice-step" disabled title="选择 ckpt 段后可按 step 过滤"><option value="">全部 step</option></select>
+            <select id="ds-slice-source"><option value="">全部源</option></select>
+            <button id="ds-slice-expand-all" class="btn" title="展开当前页全部 step">展开全部</button>
+            <button id="ds-slice-collapse-all" class="btn" title="折叠当前页全部 step">折叠全部</button>
+          </div>
+          <div id="ds-slices" class="ds-episodes"></div>
+          <div class="ds-pager">
+            <button id="ds-slice-prev" class="btn">上一页</button>
+            <span id="ds-slice-page-info" class="ds-pager-info"></span>
+            <button id="ds-slice-next" class="btn">下一页</button>
+          </div>
+        </div>
+      </div>
+      <div class="ds-main" id="ds-viewer">
+        <div class="card placeholder-card">
+          <div class="placeholder-icon">▦</div>
+          <h3>训练集可视化</h3>
+          <p>左侧选择数据集与 episode，或从训练切片进入。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-sampling" class="tab-page">
+    <div class="card" style="padding:20px">
+      <h3>任务与 episode 采样覆盖</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0">
+        <label>训练 <select id="sampling-run"></select></label>
+        <label>任务 <select id="sampling-task"><option value="">全部任务</option></select></label>
+        <label>Episode <select id="sampling-episode" style="max-width:350px"><option value="">全部 episode</option></select></label>
+        <button id="sampling-refresh" class="btn">刷新统计</button>
+      </div>
+      <p id="sampling-status" class="muted"></p>
+      <p id="sampling-summary"></p><p id="sampling-note" class="muted"></p>
+      <div style="max-height:540px;overflow-y:auto;margin:24px 0 32px"><div id="sampling-distribution" style="height:540px"></div></div>
+      <h3>Episode 明细（含尚未见到的 episode）</h3>
+      <input id="sampling-search" type="search" placeholder="搜索任务 / episode">
+      <select id="sampling-sort"><option value="least">训练次数少优先</option><option value="most">训练次数多优先</option><option value="coverage">覆盖率低优先</option></select>
+      <p id="sampling-table-note" class="muted"></p>
+      <div style="overflow:auto"><table style="width:100%;text-align:left"><thead><tr>
+        <th>任务</th><th>Episode</th><th>采样次数</th><th>不同窗口</th><th>有效窗口总数</th><th>覆盖率</th><th>最近 step</th>
+      </tr></thead><tbody id="sampling-rows"></tbody></table></div>
+    </div>
+  </section>
+  <section id="tab-taskmetrics" class="tab-page">
+    <div class="card" style="padding:24px">
+      <h3>按任务定位训练与验证表现</h3>
+      <div class="task-controls">
+        <label>训练 <select id="taskmetrics-run"></select></label>
+        <label>指标 <select id="taskmetrics-phase"><option value="train">训练 loss</option><option value="validation">验证集指标</option></select></label>
+        <label>任务 <select id="taskmetrics-task"><option value="">全部任务（整体均值）</option></select></label>
+        <select id="taskmetrics-metric"></select><button id="taskmetrics-refresh" class="btn">刷新</button>
+      </div>
+      <p id="taskmetrics-status"></p><p id="taskmetrics-note" class="muted"></p>
+      <div id="taskmetrics-chart" style="height:380px"></div>
+      <h3>任务对照 · 按所选指标从高到低排列</h3>
+      <p class="muted">MSE / loss 越低越好，PSNR 越高越好；先结合样本数和历史曲线判断，再用闭环成功率确认。</p>
+      <input id="taskmetrics-search" type="search" placeholder="搜索任务名">
+      <div style="overflow:auto;margin-top:16px"><table style="width:100%;min-width:1100px;text-align:left"><thead><tr id="taskmetrics-head"></tr></thead><tbody id="taskmetrics-rows"></tbody></table></div>
+    </div>
+  </section>
+</main>
+<style>
+#tab-sampling,#tab-taskmetrics{font-size:14px;line-height:1.65}
+#tab-sampling select,#tab-taskmetrics select,#tab-sampling input,#tab-taskmetrics input{padding:7px 10px;border:1px solid var(--border,#ccd5e0);border-radius:6px;background:var(--bg-card,#fff);color:inherit;font:inherit;max-width:340px}
+.task-controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:20px 0}
+#tab-taskmetrics td,#tab-taskmetrics th,#tab-sampling th{padding:12px 14px;border-bottom:1px solid var(--border,#e4e9f1);white-space:nowrap}
+#taskmetrics-rows tr{cursor:pointer}
+#taskmetrics-rows tr:hover,#sampling-rows tr:hover{background:rgba(80,115,210,.08)}
+</style>
+
+<script src="/static/vendor/echarts.min.js"></script>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

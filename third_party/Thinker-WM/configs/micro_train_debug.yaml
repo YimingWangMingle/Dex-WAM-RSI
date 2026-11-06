@@ -1,0 +1,226 @@
+# Micro debug config for train_debug/micro_train.py.
+#
+# 数据走 motus-data-factory 的 indexed（Catalog/SamplePool）管线：4 个源
+# （robotmind×4，等权；20260815 起 robotwin×4 剔除——管线只有关节 qpos、
+# 无 EEF 字段，与 U=20 delta-EEF 空间不符），catalog/ranges 由 data_prepare/
+# 工具从 micro_data/ 构建（见 build_micro_catalogs.py / build_sampling_ranges.py）。
+# 每个源 pool spec 为 sampling_ranges：读 micro_data/catalogs/<name>.ranges.sqlite，
+# 运行时内存动态生成随机窗口索引（不落盘枚举 pool）。
+# agibot / agibot_beta 本地无法构建 catalog（缺标注目录 / 48GB tar），
+# 这两源由 H 集群 CPU 冒烟覆盖。
+# robot_names 仍由模型侧使用（train_debug/micro_train.py 的 _get_robot_configs），
+# 名称必须与各 catalog 记录里的 robot 名一致。
+#
+# The model is the REAL UBT_WM, but with tiny randomly-initialized backbone
+# stand-ins (train_debug/micro_backbones.py, injected via UBT_WM's `backbones`
+# argument) and minimal layer counts: no pretrained weights are loaded.
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  # 1:6（video_stride 布局，动作 N*6=288 步）；固定 5fps 轮起 k=1（pool
+  # 不再写 stride_max）；生产取值见 stage2_20260815_v1.yaml
+  video_action_freq_ratio: 6
+  # 统一 action 空间（模型边界 scatter 的目标维；band 注册表见
+  # dataset.unified_bands）。20260815 起 80 → 20 紧凑 delta-EEF 布局
+  # （生产取值见 stage2_20260815_v1.yaml）
+  unified_action_dim: 20
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  # robotmind 源每个窗口 episode 只有 1 条 selection，小批次需要保留不完整批
+  drop_last: false
+  robot_names:
+    robotmind-tianyi:
+      action_dim: 16
+      # 本地维序（EEF 位姿，key 序 left_arm, right_arm, left_gripper,
+      # right_gripper）：[左 xyz+quat, 右 xyz+quat, 左夹爪, 右夹爪]
+      # B1/B2（20260811）：quat 本地维（3-6/10-13）由 unified_rot_groups 接管
+      # 转 6D。注意：robotmind quat 分量序仓库无文档，默认 xyzw（错误仅影响
+      # 本机 micro 回归有效性，stage2 混合不含 robotmind）
+      unified_dim_map: [0, 1, 2, -1, -1, -1, -1, 10, 11, 12, -1, -1, -1, -1, 9, 19]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, cols: [3, 4, 5, 6, 7, 8]}
+      - {local: [10, 11, 12, 13], repr: quat, cols: [13, 14, 15, 16, 17, 18]}
+      robot_token_index: 5
+      aliases:
+      - robotmind-tianyi
+      - tianyi
+      - robotmind
+    robotmind-arkmobile:
+      action_dim: 20
+      # 本地维序（key 序 left_arm, right_arm, left_gripper, right_gripper,
+      # chassis_twist）：[左 xyz+rot3, 右 xyz+rot3, 左夹爪, 右夹爪, 底盘 twist]
+      # B1/B2（20260811）：rot3 本地维（3-5/9-11）由 unified_rot_groups 接管
+      # 转 6D；rot3 定义仓库无文档，按 rotvec 处理（同上风险注释）；
+      # U=20 布局无底盘 band：twist 6 维全部 -1 摘除
+      unified_dim_map: [0, 1, 2, -1, -1, -1, 10, 11, 12, -1, -1, -1, 9, 19,
+                        -1, -1, -1, -1, -1, -1]
+      unified_rot_groups:
+      - {local: [3, 4, 5], repr: rot3, cols: [3, 4, 5, 6, 7, 8]}
+      - {local: [9, 10, 11], repr: rot3, cols: [13, 14, 15, 16, 17, 18]}
+      robot_token_index: 6
+      aliases:
+      - robotmind-arkmobile
+      - arkmobile
+      - ark-mobile
+    robotmind-ark:
+      action_dim: 14
+      # 本地维序（key 序 left_arm, left_gripper, right_arm, right_gripper）：
+      # [左 xyz+rot3, 左夹爪, 右 xyz+rot3, 右夹爪]
+      # B1/B2（20260811）：rot3 本地维（3-5/9-11）由 unified_rot_groups 接管
+      unified_dim_map: [0, 1, 2, -1, -1, -1, 9, 10, 11, 12, -1, -1, -1, 19]
+      unified_rot_groups:
+      - {local: [3, 4, 5], repr: rot3, cols: [3, 4, 5, 6, 7, 8]}
+      - {local: [10, 11, 12], repr: rot3, cols: [13, 14, 15, 16, 17, 18]}
+      robot_token_index: 7
+      aliases:
+      - robotmind-ark
+      - ark
+    robotmind-tienkung:
+      action_dim: 16
+      # 本地维序同 robotmind-tianyi：[左 xyz+quat, 右 xyz+quat, 左夹爪, 右夹爪]
+      # B1/B2（20260811）：quat 本地维由 unified_rot_groups 接管（同 tianyi）
+      unified_dim_map: [0, 1, 2, -1, -1, -1, -1, 10, 11, 12, -1, -1, -1, -1, 9, 19]
+      unified_rot_groups:
+      - {local: [3, 4, 5, 6], repr: quat, cols: [3, 4, 5, 6, 7, 8]}
+      - {local: [10, 11, 12, 13], repr: quat, cols: [13, 14, 15, 16, 17, 18]}
+      robot_token_index: 8
+      aliases:
+      - robotmind-tienkung
+      - tienkung
+  # 统一 action 空间语义槽位注册表（20260815 起新分支周期重定义为 U=20
+  # 紧凑 delta-EEF 布局，替换旧 80 列 append-only 表）。每机器人
+  # dataset.robot_names[*].unified_dim_map 逐维显式声明本地维 → 统一空间
+  # 列索引；get_robot_layout 校验每列落在某个已注册 band 内——跨机器人
+  # 共享同一列即显式语义对齐。
+  unified_bands:
+    eef_left_pos: [0, 3]        # EEF 位置 xyz（相对首帧 action 的 delta pos，米）：左臂
+    eef_left_rot6: [3, 9]       # EEF 姿态 6D 旋转（R_sᵀ·R_i）：左臂（各本体共享 = 语义对齐）
+    eef_left_gripper: [9, 10]   # EEF 夹爪开合（min-max [-1,1]）：左
+    eef_right_pos: [10, 13]     # 右臂
+    eef_right_rot6: [13, 19]
+    eef_right_gripper: [19, 20]
+  sources:
+  - name: robotmind_tianyi
+    dataset: robotmind_tianyi
+    weight: 1.0
+    catalog_path: micro_data/catalogs/robotmind_tianyi.episode_catalog.jsonl
+    index_path: micro_data/catalogs/robotmind_tianyi.episode_catalog.index.sqlite
+    pool:
+      type: sampling_ranges
+      path: micro_data/catalogs/robotmind_tianyi.ranges.sqlite
+  - name: robotmind_arkmobile
+    dataset: robotmind_arkmobile
+    weight: 1.0
+    catalog_path: micro_data/catalogs/robotmind_arkmobile.episode_catalog.jsonl
+    index_path: micro_data/catalogs/robotmind_arkmobile.episode_catalog.index.sqlite
+    pool:
+      type: sampling_ranges
+      path: micro_data/catalogs/robotmind_arkmobile.ranges.sqlite
+  - name: robotmind_ark
+    dataset: robotmind_ark
+    weight: 1.0
+    catalog_path: micro_data/catalogs/robotmind_ark.episode_catalog.jsonl
+    index_path: micro_data/catalogs/robotmind_ark.episode_catalog.index.sqlite
+    pool:
+      type: sampling_ranges
+      path: micro_data/catalogs/robotmind_ark.ranges.sqlite
+  - name: robotmind_tienkung
+    dataset: robotmind_tienkung
+    weight: 1.0
+    catalog_path: micro_data/catalogs/robotmind_tienkung.episode_catalog.jsonl
+    index_path: micro_data/catalogs/robotmind_tienkung.episode_catalog.index.sqlite
+    pool:
+      type: sampling_ranges
+      path: micro_data/catalogs/robotmind_tienkung.ranges.sqlite
+model:
+  timing_level: 2    # micro 验证用：输出逐 block 检查点
+  # condition_dropout_prob 已弃用删除（20260818_v2 起并入 modality_dropout_prompt；
+  # 代码字段保留但非 0 仅触发 warning）
+  unified_vlm_task_prompt: true    # 统一 VLM task prompt（utils.vlm_utils），本机验证字段 dropout 路径
+  vlm_field_dropout_prob: 0.2    # VLM 字段 dropout（rewrite 开启时为输出侧语义：对改写输出按字段行 drop、保底留 1；rewrite 关闭时为输入侧四字段格式指令移除），本机验证该路径
+  freeze_action_branch: false
+  wm:
+    video_encoder_layer_num: 1
+    video_decoder_layer_num: 1
+    action_encoder_layer_num: 1
+    action_decoder_layer_num: 1
+    und_layer_num: 1
+    action_t_downsample: 1
+    # 模态 dropout（评审 #4 决策 3/4）：video/action/prompt 三模态各自独立概率、
+    # batch 级每 update step 重采（被 drop 模态不进网络、loss 置零；video 与
+    # action 同 drop 时保底留一）；independent_modality_noise 使同批 video/action
+    # 独立采样 timestep/σ。本机验证路径，生产取值见 stage2 配置。
+    modality_dropout_video: 0.1
+    modality_dropout_action: 0.1
+    modality_dropout_prompt: 0.1
+    independent_modality_noise: true
+    # 20260811 MotusBrain 对齐（B1/B2/B3/D1，本机验证路径；生产配置见
+    # stage2_20260815_v1.yaml）：
+    flow_shift: 6.0               # D1：video timeshift（论文 video=6）
+    action_flow_shift: 1.0        # D1：action 独立 timeshift（论文 action=1）
+    action_norm_policy: gripper_hand_minmax   # B3：仅夹爪/灵巧手维 [-1,1]，其余物理量纲（robotmind 用 micro subset 暂行统计，20260815 起）
+    action_target_repr: relative_eef_rot6     # B1/B2：EEF 相对条件帧 state + 统一 6D 旋转目标
+    # 20260818：video/action 训练与推理噪声分布对齐 MotusBrain（per-modality
+    # timeshift 6/1 + 纯 MSE 无加权 + action 逐帧 i.i.d. 噪声）。
+  # 修复 #1/#3b/#9c：action 侧推理参数（periodic_eval 经
+  # resolve_action_inference_params 读取，本机验证 per-modality σ 网格与
+  # 时序平滑路径；video 4 步 / action 2 步非对齐网格）
+  inference:
+    num_inference_timesteps: 4
+    guidance_scale: 1.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 2
+    action_temporal_smooth_alpha: 0.5
+  micro_wan:
+    dim: 192
+    ffn_dim: 384
+    num_heads: 2
+    num_layers: 3
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+training:
+  batch_size: 2
+  max_steps: 40
+  learning_rate: 1.0e-4
+  num_workers: 0
+  log_interval: 1
+  # 每个 batch VAE encode 一次后、按不同噪声独立参数更新的步数（默认 1=不复用；
+  # 本机 micro 保持 1 便于对照，>1 时同一 batch 连续更新 N 步、每步重采样噪声）
+  train_steps_per_vae_encode: 1
+timing:
+  # Step timing (monitor.timing.TimingStack)
+  enabled: true       # 是否启用 per-step 计时
+  sync_cuda: true     # 每段计时前后是否同步 CUDA（保证测量 GPU 执行时间）
+  interval: 1         # 打点周期（步）：1=每步都记，5=每5步记一次
+monitor:
+  # 训练监控（monitor/ 库），本机验证用；正式开关见 stage1/stage2 配置。
+  # 数据写到 <仓库上级目录>/motus_monitor_data/（不可写时回退 ~/.local/share/）。
+  enabled: true
+  metrics_interval: 1  # monitor 指标记录间隔（步）：1=每步都记；与 console/TB 的 log_interval 无关
+  data_dir: null
+  system_interval: 1.0
+  status_interval: 1.0
+  collect_system: true
+periodic_eval:
+  # 周期性定集评测（periodic_eval/ 包）本机冒烟：每 4 步一轮，单 rank 取
+  # 权重最大源（robotmind 四源等权，取首个）holdout（micro 源无 eval_pool，
+  # 回退 pool）的跨 episode 多样化 batch（batch_size 缺省 = 训练 2//4 = 1，
+  # 即 1 条 episode 的 1 个窗口）。micro 替身 VLM 无 generate，vlm_generate
+  # 会自动降级为 null。EWMBenchmark 仅在集群有数据，本机关闭。
+  enabled: true
+  interval_steps: 4
+  num_inference_steps: 4        # micro 冒烟用极少去噪步（生产缺省 50）
+  seed: 20260805
+  vlm_generate: true
+  vlm_max_new_tokens: 32
+  fps: 6
+  cache_dir: outputs/periodic_eval_cache
+  ewmbenchmark:
+    enabled: false
+    root: /data/chen.liao/EWMBenchmark

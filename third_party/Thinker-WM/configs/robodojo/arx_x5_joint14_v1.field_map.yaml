@@ -1,0 +1,39 @@
+# RoboDojo ARX-X5 dual arm (RoboDojo_depth HDF5), absolute joint control.
+# action[t] == state[t+1]; 14D = left arm 6 + left gripper 1 + right arm 6 + right gripper 1.
+# Layout reproduces the RoboTwin Motus T on a 480x640 canvas: head 320x426 on
+# top, wrists 160x213 below, centred (x0 = 107).
+schema_version: 1
+control_hz: 25
+rgb:
+  encoding: encoded_bytes
+  views:
+    head: vision/cam_head/colors
+    left_wrist: vision/cam_left_wrist/colors
+    right_wrist: vision/cam_right_wrist/colors
+depth:
+  unit_to_mm: 1.0
+  invalid_values: [0]
+  views:
+    head: vision/cam_head/approximate_depths
+    left_wrist: vision/cam_left_wrist/approximate_depths
+    right_wrist: vision/cam_right_wrist/approximate_depths
+state:
+  paths: [state/left_arm_joint_states, state/left_ee_joint_states,
+          state/right_arm_joint_states, state/right_ee_joint_states]
+  columns: null
+  feature_names: [left_j1, left_j2, left_j3, left_j4, left_j5, left_j6, left_gripper,
+                  right_j1, right_j2, right_j3, right_j4, right_j5, right_j6, right_gripper]
+action:
+  paths: [action/left_arm_joint_states, action/left_ee_joint_states,
+          action/right_arm_joint_states, action/right_ee_joint_states]
+  columns: null
+  semantics: abs_joint
+  feature_names: [left_j1, left_j2, left_j3, left_j4, left_j5, left_j6, left_gripper,
+                  right_j1, right_j2, right_j3, right_j4, right_j5, right_j6, right_gripper]
+frame_rows: null
+instruction: {path: instruction}
+scene: {path_tail: 4}
+layout:
+  rows: [[head], [left_wrist, right_wrist]]
+  row_hw: [[320, 426], [160, 213]]
+  canvas_hw: [480, 640]

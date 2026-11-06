@@ -1,0 +1,4 @@
+# Only portable task execution; model and simulator environments are separate.
+numpy>=1.24,<3
+Pillow>=9
+# Campaigns additionally require the separately versioned PhysicalRSI_core.

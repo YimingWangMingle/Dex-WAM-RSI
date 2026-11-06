@@ -1,0 +1,269 @@
+# V14：RoboTwin 全量 50 任务 RGB+D。16 卡。
+# 从 V13@32000 只加载权重（finetune，全新优化器/调度器）。
+# 20260921 对齐审计后，训练语义另修两项：RoboTwin action 从 t 而非 t+1
+# 开始取；state/action 归一化及 flow 数值保留 FP32。修复前的 V14 checkpoint
+# 不作为同语义的完整 resume；本次通过 V14_ALIGNFIX_FROM_10000 启动分支
+# 从 V14@10000 仅加载权重，重新初始化优化器/调度器，不必从头训练。
+# timestep 标签训练/推理统一 FP32，主干仍 BF16。
+# 相对 V13 的模型结构改两处：
+#   1. Prompt：训练时每个采样身份从该 episode 的官方 seen 英文指令候选里选一句
+#      （seen100 catalog + v14_f24_r2 ranges 的 choice_one 载荷 + pool
+#      text_choice=random）；评测固定首条候选（text_choice=first）。
+#   2. Action condition：条件帧 qpos 编成独立 state token 前插到动作序列，
+#      RoPE 上 state@0、48 个动作 token @1…48，state 扩散时间恒 0、不加噪、
+#      不进 loss，decoder 输出前切掉。
+#
+# V14 相对 V13 增加 state 前缀，动作 RoPE 序号整体 +1；时间间距仍 1/8。
+# 本次从 V14@10000 热启动保留该布局，仅 action 目标前移一拍并提高数值精度。
+# RoPE 是位置编码，不能把序号差直接解释为控制延迟，也不能仅由偏移量推断
+# loss 抬升幅度。2000 步闸门观察修正后口径内的 loss/闭环，不保证必然恢复。
+#
+# 新库与 V13 库的关系（已校验）：episode 集合、ratio、intervals、episode_len
+# 和总有效起点（train 4,818,954 / holdout 44,859）逐条相同，唯一差异是文本
+# 载荷；且每条 episode 的首条候选与 V13 逐条一致，所以 text_choice=first 的
+# 文本保持一致；但 action_start_offset 已变化，动作目标与 V13 历史评测
+# 不同，action MSE 不可直接横比；比较 checkpoint 应统一用修正后的评测口径。
+#
+# 不要 resume V13 优化器：动作 token 位置变了、文本分布变了。
+# 其余全部沿用 V13：24 帧 / ratio=2 / d=1 / depth 三路全开 / tlayout /
+# field_dropout=0 / LR 全 1e-5 / bs=6 / action_t_downsample=1。
+
+common:
+  action_dim: 14
+  state_dim: 14
+  unified_action_dim: 14
+  num_video_frames: 24
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 2
+  action_chunk_size: 48
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: true
+  cross_rank_source_policy: weighted_per_step
+  robot_names:
+    aloha:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 16
+  sources:
+  - name: robotwin_3d
+    dataset: robotwin_3d
+    weight: 1.0
+    prompt_mode: vlm_image_text
+    # seen100 catalog（20260916 建，all_seen=true，27500 条）：每 episode 带
+    # 官方全部 seen 英文指令。V13 在用的单句 catalog 不动。
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.train.v14_f24_r2.ranges.sqlite
+      # 训练：每个采样身份用独立文本 RNG 从候选里选一句（窗口采样流不受影响）。
+      text_choice: random
+      # RoboTwin action[t] == observation.state[t+1]，条件 state[t] 后的第一个
+      # 控制目标应取 action[t]；旧 +1 路径会再提前一拍。
+      action_start_offset: 0
+      # episode 内无放回：同一轮扫描每个有效起点至多一次（旧有放回约 37% 起点
+      # 整轮落空）。虚拟长度、episode_groups、组批与 episode 间配比都不变，
+      # 本轮唯一漏掉的是每条末尾凑不齐 batch 的零头（约 1.4%）。
+      without_replacement: true
+    eval_pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.holdout.v14_f24_r2.ranges.sqlite
+      # 评测：固定首条候选，与 V13 历史曲线同口径。不要改成 random。
+      text_choice: first
+      action_start_offset: 0
+depth:
+  robotwin_3d_root: /data/xiongwei.zhao/robotwin_3d
+  z_near: 0.01
+  z_far: 2.0
+  mode: log
+  invalid_to: far
+  prod_keep_only: true
+  # 对齐 V13 单节点并发：min(workers, bs)=6 → 8 rank × 6 = 48 路 ffmpeg。
+  # V14 bs8 若仍用 8 会到 64 路，本 pod 的 pids 配额会被打满（ffmpeg exit 245）。
+  # 1 = 退回串行。
+  attach_workers: 6
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    modality_dropout_video: 0.1
+    modality_dropout_action: 0.1
+    modality_dropout_prompt: 0.1
+    independent_modality_noise: true
+    flow_shift: 6.0
+    action_flow_shift: 1.0
+    action_norm_policy: zscore
+    action_target_repr: absolute_native
+    zero_action_loss_force_max_noise: false
+    enable_depth: true
+    depth_loss_weight: 1.0
+    depth_motion_loss_enable: false
+    depth_edge_loss_enable: false
+    depth_read_by_action: true
+    depth_read_by_video: true
+    depth_read_by_und: true
+    depth_detach_video_kv: false
+    modality_dropout_depth: 0.1
+    depth_share_video_noise: true
+    depth_uni_clone_layers: 14
+  unified_vlm_task_prompt: true
+  vlm_prompt_style: robotwin_tlayout
+  vlm_text_rewrite: false
+  # robotwin_tlayout 没有 Scene/Task/Action/Outcome 可丢，0 避免空转。
+  vlm_field_dropout_prob: 0.0
+  inference:
+    num_inference_timesteps: 10
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 4
+    action_temporal_smooth_alpha: 0.5
+    depth_temporal_smooth_alpha: 0.0
+  timing_level: 2
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+  load_pretrained_backbones: false
+training:
+  batch_size: 8
+  # 单个固定 seed/固定目标语义的 run 中，一轮 = 36,900 步（16 卡 × bs8）：
+  # 实际消费 4,723,200 个互不重复窗口，覆盖全部 4,818,954 个起点的 98.01%。
+  # 默认原始 V14 的 34,000 步覆盖约 90.31%；alignfix launcher 会把本阶段上限
+  # 覆盖为 24,000 步，本阶段最多覆盖约 63.75%。旧 10,000 步与新 24,000 步
+  # 使用不同 seed、且 action 目标语义不同，不能合并解释为一次无重复的 34,000
+  # 步扫描，也不能沿用 90.31% 作为合并覆盖率。16 卡 bs8 的步时需重测。
+  # 闸门全部是人工的：2000 步查退化、8000~10000 步与 V13@32000 闭环对照、
+  # 20000/34000 看成功率是否继续涨。任一道闸不过就手动停，不要为了跑满一轮
+  # 硬跑。代码里没有任何自动停训逻辑，max_steps 只是上限；下面的
+  # periodic_eval 也只算离线 PSNR/AbsRel/action MSE，不跑 RoboTwin 闭环成功率，
+  # 闭环对照要另外起部署评测。
+  max_steps: 34000
+  learning_rate: 1.0e-05
+  depth_learning_rate: 1.0e-05
+  depth_clone_learning_rate: 1.0e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 1000
+  cycle_length: 1000000
+  f_max: 0.99
+  f_min: 0.4
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  train_steps_per_vae_encode: 1
+  # 训练 seed 红线（20260818 起）：新配置必须显式设新的非零值，否则不同运行
+  # 采样到完全相同的训练数据。数据划分 seed（split_seed 20260713）不变。
+  # 修正版续接使用新采样序列，避免与旧 V14 的前 10000 步重复。
+  seed: 20260921
+system:
+  checkpoint_dir: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v14_robotwin_full
+  log_level: INFO
+  log_interval: 10
+  save_interval: 2000
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: V14_full
+resume:
+  # 默认原始 V14 首启：从 finetune 段的 V13@32000 只加载权重。
+  # alignfix 的 init/resume/auto 由 tmp/launch_v14_full_16.sh 显式覆盖；恢复时
+  # auto_resume_latest 每次只选择 V14_full_alignfix 下带完整标记的最新 checkpoint。
+  checkpoint_path: null
+  auto_resume_latest: false
+  reset_scheduler: false
+finetune:
+  # V13 第一段的落点。启动前确认该目录的 .motus_checkpoint_complete.json 已写。
+  checkpoint_path: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v13_robotwin_full/robotwin_3d_full_v13_rgbd/V13_full/checkpoint_step_32000
+timing:
+  enabled: true
+  sync_cuda: false
+  interval: 10
+monitor:
+  enabled: true
+  metrics_interval: 1
+  data_dir: /data/xiongwei.zhao/thinkerwam-depth/motus_monitor_data
+  system_interval: 2.0
+  status_interval: 2.0
+  collect_system: true
+periodic_eval:
+  enabled: true
+  interval_steps: 4000
+  num_inference_steps: 10
+  # 只限制单次 inference_step 的条数，不改 holdout 268 条、不改 seed。
+  # 16 卡时 holdout_family_counts 会给每卡 16～17 条；整批推会高于训练
+  # bs8。V13 24 卡已验证每卡 11～12 条能过，这里按训练 bs 切成 8。
+  batch_size: 8
+  # 评测 seed 保持 20260908，以固定 episode/prompt/观测。action_start_offset
+  # 已从 1 改为 0，因此 action MSE 不能直接与 V13 历史记录横比；应把旧、新
+  # checkpoint 都放进当前修正后的同一评测流程。不要跟着 training.seed 改。
+  seed: 20260908
+  vlm_generate: false
+  fps: 50
+  train_pool_fraction: 0.0
+  holdout_family_counts:
+    robotwin_3d: 268
+  cache_dir: /data/xiongwei.zhao/thinkerwam-depth/periodic_eval_cache_v14_full
+  source_weights:
+    robotwin_3d: 1.0
+    ewmbenchmark: 0
+  ewmbenchmark:
+    enabled: false
+    root: /data/chen.liao/EWMBenchmark
+    robot_name: agibot-a2-d

@@ -1,0 +1,866 @@
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 6
+  unified_action_dim: 20
+  action_chunk_size: 288
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  cross_rank_source_policy: weighted_per_step
+  robot_names:
+    agibot-a2-d:
+      action_dim: 26
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - 9
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - 19
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        repr: rotvec
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 16
+        - 17
+        - 18
+        repr: rotvec
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 4
+      aliases:
+      - agibot-a2-d
+      - agibot
+      - agibot_beta
+    agibot-beta-parallel-gripper:
+      action_dim: 14
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - 9
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - 19
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        repr: rotvec
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 10
+        - 11
+        - 12
+        repr: rotvec
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 5
+      aliases:
+      - agibot-beta-parallel-gripper
+    agibot-beta-dexterous-hand:
+      action_dim: 24
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        repr: rotvec
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 15
+        - 16
+        - 17
+        repr: rotvec
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 6
+      aliases:
+      - agibot-beta-dexterous-hand
+    egoverse-aria-bimanual:
+      action_dim: 14
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - -1
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        - 6
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 10
+        - 11
+        - 12
+        - 13
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 8
+      aliases:
+      - egoverse-aria-bimanual
+    egoverse-aria-left-arm:
+      action_dim: 7
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        - 6
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      robot_token_index: 9
+      aliases:
+      - egoverse-aria-left-arm
+    egoverse-aria-right-arm:
+      action_dim: 7
+      unified_dim_map:
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        - 6
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 10
+      aliases:
+      - egoverse-aria-right-arm
+    egoverse-eva-bimanual:
+      action_dim: 16
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - -1
+      - 9
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - -1
+      - 19
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        - 6
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 11
+        - 12
+        - 13
+        - 14
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 11
+      aliases:
+      - egoverse-eva-bimanual
+    egoverse-scale-bimanual:
+      action_dim: 14
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - -1
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        - 6
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 10
+        - 11
+        - 12
+        - 13
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 12
+      aliases:
+      - egoverse-scale-bimanual
+    egoverse-mecka-freeform-bimanual:
+      action_dim: 14
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - -1
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        - 6
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 10
+        - 11
+        - 12
+        - 13
+        repr: quat
+        quat_order: wxyz
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      robot_token_index: 13
+      aliases:
+      - egoverse-mecka-freeform-bimanual
+    openvid-null:
+      action_dim: 26
+      unified_dim_map:
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      robot_token_index: 14
+      aliases:
+      - openvid-null
+      - openvid
+    egoscale-orb-stereo-human:
+      action_dim: 24
+      unified_dim_map:
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      - 10
+      - 11
+      - 12
+      - -1
+      - -1
+      - -1
+      - -1
+      - -1
+      unified_rot_groups:
+      - local:
+        - 11
+        - 12
+        - 13
+        - 14
+        repr: quat
+        quat_order: xyzw
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      - local:
+        - 19
+        - 20
+        - 21
+        - 22
+        repr: quat
+        quat_order: xyzw
+        cols:
+        - 13
+        - 14
+        - 15
+        - 16
+        - 17
+        - 18
+      unified_validity_gates:
+      - local: 15
+        cols:
+        - 0
+        - 10
+      - local: 23
+        cols:
+        - 10
+        - 20
+      robot_token_index: 15
+      aliases:
+      - egoscale-orb-stereo-human
+    libero-panda:
+      action_dim: 7
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - -1
+      - -1
+      - -1
+      - 9
+      unified_rot_groups:
+      - local:
+        - 3
+        - 4
+        - 5
+        repr: rotvec
+        cols:
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+      eef_relative: false
+      robot_token_index: 7
+      aliases:
+      - libero-panda
+      - libero
+  unified_bands:
+    eef_left_pos:
+    - 0
+    - 3
+    eef_left_rot6:
+    - 3
+    - 9
+    eef_left_gripper:
+    - 9
+    - 10
+    eef_right_pos:
+    - 10
+    - 13
+    eef_right_rot6:
+    - 13
+    - 19
+    eef_right_gripper:
+    - 19
+    - 20
+  sources:
+  - name: agibot_beta_parallel_gripper
+    dataset: agibot_beta_parallel_gripper
+    weight: 0.2388879
+    pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/agibot_da3_depth/v1
+      - /data/xiongwei.zhao/agibot_da3_depth_fulltimeline/v1
+      holdout_fraction: 0.1
+      split: train
+    eval_pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/agibot_da3_depth/v1
+      - /data/xiongwei.zhao/agibot_da3_depth_fulltimeline/v1
+      holdout_fraction: 0.1
+      split: holdout
+  - name: agibot_beta_dexterous_hand
+    dataset: agibot_beta_dexterous_hand
+    weight: 0.0111121
+    pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/agibot_da3_depth/v1
+      - /data/xiongwei.zhao/agibot_da3_depth_fulltimeline/v1
+      holdout_fraction: 0.1
+      split: train
+    eval_pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/agibot_da3_depth/v1
+      - /data/xiongwei.zhao/agibot_da3_depth_fulltimeline/v1
+      holdout_fraction: 0.1
+      split: holdout
+  - name: egoscale_first500h_shard00
+    dataset: egoscale_first500h_shard00
+    weight: 0.0184213
+    pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: train
+    eval_pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: holdout
+  - name: egoscale_first500h_remaining90pct
+    dataset: egoscale_first500h_remaining90pct
+    weight: 0.1665936
+    pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: train
+    eval_pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: holdout
+  - name: egoscale_second1700h_batch01
+    dataset: egoscale_second1700h_batch01
+    weight: 0.3816800
+    pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: train
+    eval_pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: holdout
+  - name: egoscale_second1700h_batch02
+    dataset: egoscale_second1700h_batch02
+    weight: 0.1833050
+    pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: train
+    eval_pool:
+      type: depth_clips
+      prod_keep_only: true
+      roots:
+      - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+      holdout_fraction: 0.1
+      split: holdout
+depth:
+  roots:
+  - /data/xiongwei.zhao/agibot_da3_depth/v1
+  - /data/xiongwei.zhao/agibot_da3_depth_fulltimeline/v1
+  - /data/xiongwei.zhao/egoscale_ffs_depth/v1
+  z_near: 0.15
+  z_far: 4.0
+  mode: log
+  invalid_to: far
+  prod_keep_only: true
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 6
+    modality_dropout_video: 0.1
+    modality_dropout_action: 0.1
+    modality_dropout_prompt: 0.1
+    independent_modality_noise: true
+    flow_shift: 6.0
+    action_flow_shift: 1.0
+    action_norm_policy: gripper_hand_minmax
+    action_target_repr: relative_eef_rot6
+    zero_action_loss_force_max_noise: false
+    enable_depth: true
+    depth_loss_weight: 1.0
+    # V8 = V6.1 配方 + QC v4 数据。edge / 运动加权都关。
+    depth_motion_loss_enable: false
+    depth_edge_loss_enable: false
+    # V6：action 读 depth。depth 读 RGB 的 K/V 不 detach。
+    depth_read_by_action: true
+    depth_detach_video_kv: false
+    # 训练时随机丢掉 depth，让 action 也能在没有 depth 的情况下工作（FLEX-π）。
+    modality_dropout_depth: 0.1
+    depth_share_video_noise: true
+    # uni 14 层全克隆给 depth。V5(6 层) 热启动见 _remap_depth_uni_clone_growth。
+    depth_uni_clone_layers: 14
+  unified_vlm_task_prompt: true
+  vlm_text_rewrite: true
+  vlm_rewrite_max_new_tokens: 128
+  vlm_rewrite_cache_dir: /code1/llm_team/chen.liao/ThinkerWM/VLM_output_cache
+  inference:
+    num_inference_timesteps: 50
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 10
+    action_temporal_smooth_alpha: 0.5
+    # 默认关。depth 和 RGB 一样是重建观测，正式数字不后处理。
+    # 只想看视频抖不抖时再临时开到 0.5。
+    depth_temporal_smooth_alpha: 0.0
+  timing_level: 2
+  vlm_field_dropout_prob: 0.1
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+  load_pretrained_backbones: false
+training:
+  batch_size: 3
+  max_steps: 10000
+  learning_rate: 1.0e-05
+  depth_learning_rate: 2.0e-05
+  # V6.1：14 层克隆 @ 1e-5（V6 用 2e-5）。从 V5@20k 热启动时会新克隆 8 层。
+  depth_clone_learning_rate: 1.0e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 500
+  cycle_length: 1000000
+  f_max: 0.99
+  f_min: 0.4
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  train_steps_per_vae_encode: 3
+  seed: 20260826
+system:
+  checkpoint_dir: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/depth_ablation_treatment_v8
+  log_level: INFO
+  log_interval: 10
+  save_interval: 1000
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: depth_ablation_treatment_v8
+resume:
+  checkpoint_path: null
+  auto_resume_latest: true
+  reset_scheduler: false
+finetune:
+  # V8 从 V6.1@3000 只加载权重。优化器从零。auto_resume_latest 只用于本 run 崩溃续训。
+  checkpoint_path: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/depth_ablation_treatment_v6_1/depth_ablation_treatment_v6_1/depth_ablation_treatment_v6_1/checkpoint_step_3000
+timing:
+  enabled: true
+  sync_cuda: false
+  interval: 100
+monitor:
+  enabled: true
+  metrics_interval: 1
+  # 笔记本 serve --remote 拉的就是这个目录；null 会落到仓库上一级
+  # /code1/zxw_data/pretrain/motus_monitor_data，网页看不到。
+  data_dir: /data/xiongwei.zhao/thinkerwam-depth/motus_monitor_data
+  system_interval: 2.0
+  status_interval: 2.0
+  collect_system: true
+periodic_eval:
+  enabled: true
+  interval_steps: 1000
+  num_inference_steps: null
+  seed: 20260805
+  vlm_generate: true
+  vlm_max_new_tokens: 128
+  fps: 6
+  keep_rounds: null
+  save_separate_videos: false
+  # 16 卡：holdout_family_counts 钉 4 个 holdout rank（每源一个），其余 12 给 train。
+  # 0.75 在有 family counts 时不参与扣 rank，只作注释。
+  train_pool_fraction: 0.75
+  holdout_family_counts:
+    agibot: 8
+    egoscale: 6
+  # KEEP-only 钉盘缓存。旧 periodic_eval_cache_qcv4 被 pre_qc_v4 备份污染，不用。
+  cache_dir: /data/xiongwei.zhao/thinkerwam-depth/periodic_eval_cache_qcv4_keep
+  source_weights:
+    ewmbenchmark: 0
+    egoscale_second1700h_batch01: 1.0
+    egoscale_first500h_remaining90pct: 1.0
+    agibot_beta_parallel_gripper: 1.0
+    agibot_beta_dexterous_hand: 1.0
+    egoscale_second1700h_batch02: 0
+    egoscale_first500h_shard00: 0
+  ewmbenchmark:
+    enabled: false
+    root: /data/chen.liao/EWMBenchmark
+    robot_name: agibot-a2-d

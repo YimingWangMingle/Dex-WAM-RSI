@@ -1,0 +1,13 @@
+{
+  "files": {
+    "example.md": "272e0643e93a9e6f9a9d6050fc26a5d7e0e70814c24455c7f9c6300352a577c4"
+  },
+  "metadata": {
+    "channel": "icl",
+    "payload_bytes": 482,
+    "scope": "synthetic-teaching-only"
+  },
+  "package_id": "icl-demo",
+  "package_type": "rpent.icl.context",
+  "schema_version": 1
+}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · Motus Monitor</title>
+<script>
+(function () {
+  var theme = "light";
+  try { theme = localStorage.getItem("motus.monitor.theme") || "light"; } catch (e) {}
+  document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .login-card { width: 340px; padding: 28px; }
+  .login-card h1 { font-size: 18px; margin: 0 0 4px; }
+  .login-card .sub { font-size: 12px; margin-bottom: 20px; }
+  .login-card label { display: block; font-size: 12px; margin: 12px 0 4px; }
+  .login-card input {
+    width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 14px;
+    border-radius: 6px; border: 1px solid var(--border, #444); background: var(--bg-input, transparent);
+    color: inherit;
+  }
+  .login-card button {
+    width: 100%; margin-top: 18px; padding: 9px 0; font-size: 14px; cursor: pointer;
+    border-radius: 6px; border: 1px solid var(--border, #444);
+  }
+  .login-err { color: #e5534b; font-size: 12px; min-height: 16px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <form class="login-card card" id="login-form">
+    <h1>Motus Monitor</h1>
+    <div class="sub muted">内部训练监控 · 请使用账户登录</div>
+    <label for="username">用户名</label>
+    <input id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">密码</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit" class="btn">登 录</button>
+    <div class="login-err" id="login-err"></div>
+    <a class="login-link" href="/register" style="display:block;margin-top:12px;font-size:12px;text-align:center">没有账户？注册（首个账户自动批准）</a>
+  </form>
+</div>
+<script>
+(function () {
+  var form = document.getElementById("login-form");
+  var errBox = document.getElementById("login-err");
+  var next = new URLSearchParams(window.location.search).get("next") || "/";
+  if (next.charAt(0) !== "/" || next.indexOf("//") === 0) next = "/";
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    errBox.textContent = "";
+    fetch("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: document.getElementById("username").value,
+        password: document.getElementById("password").value,
+        next: next,
+      }),
+    }).then(function (resp) {
+      if (resp.ok) return resp.json();
+      return resp.json().then(function (body) {
+        throw new Error((body && body.error) || ("HTTP " + resp.status));
+      });
+    }).then(function (body) {
+      window.location.href = (body && body.next) || "/";
+    }).catch(function (err) {
+      errBox.textContent = err.message || "登录失败";
+    });
+  });
+})();
+</script>
+</body>
+</html>

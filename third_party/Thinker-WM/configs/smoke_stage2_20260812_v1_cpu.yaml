@@ -1,0 +1,160 @@
+# H200 CPU 冒烟配置（stage2_20260812_v1 五族 17 源混合）：经 data_prepare 接入层
+# 验证 indexed 混合读取（与训练完全相同的 create_training_data_pipeline 路径）。
+#
+# 数据源 = motus_data releases.yaml 冻结的集群 catalogs（默认解析到
+# /data/jiyuan.wang/EpisodeCatalogs）+ 每源 sampling_ranges sidecar：
+# - 13 个新源用冒烟抽样 ranges（--max-episodes 200，无窗口过滤、split all），
+#   目录 /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/
+# - robotwin×4 复用 stage2_20260807 生产 ranges（holdout 侧取 train 文件即可，
+#   冒烟不区分 split）。
+#
+# 用法（H200，纯 CPU，motus311 环境）：
+#   python scripts/smoke_indexed_mix_cpu.py --config configs/smoke_stage2_20260812_v1_cpu.yaml --steps 32
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 64
+  video_width: 64
+  global_downsample_rate: 1
+  video_action_freq_ratio: 1
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: false
+  sources:
+  - name: agibot_beta_parallel_gripper
+    dataset: agibot_beta_parallel_gripper
+    weight: 0.477776
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/agibot_beta_parallel_gripper.ranges.sqlite
+  - name: agibot_beta_dexterous_hand
+    dataset: agibot_beta_dexterous_hand
+    weight: 0.022224
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/agibot_beta_dexterous_hand.ranges.sqlite
+  - name: egoverse_aria_bimanual
+    dataset: egoverse_aria_bimanual
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/egoverse_aria_bimanual.ranges.sqlite
+  - name: egoverse_aria_left_arm
+    dataset: egoverse_aria_left_arm
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/egoverse_aria_left_arm.ranges.sqlite
+  - name: egoverse_aria_right_arm
+    dataset: egoverse_aria_right_arm
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/egoverse_aria_right_arm.ranges.sqlite
+  - name: egoverse_eva_bimanual
+    dataset: egoverse_eva_bimanual
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/egoverse_eva_bimanual.ranges.sqlite
+  - name: egoverse_scale_bimanual
+    dataset: egoverse_scale_bimanual
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/egoverse_scale_bimanual.ranges.sqlite
+  - name: egoverse_mecka_freeform_bimanual
+    dataset: egoverse_mecka_freeform_bimanual
+    weight: 0.0433333
+    prompt_mode: text_only
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/egoverse_mecka_freeform_bimanual.ranges.sqlite
+  - name: libero_10
+    dataset: libero_10
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/libero_10.ranges.sqlite
+  - name: libero_goal
+    dataset: libero_goal
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/libero_goal.ranges.sqlite
+  - name: libero_object
+    dataset: libero_object
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/libero_object.ranges.sqlite
+  - name: libero_spatial
+    dataset: libero_spatial
+    weight: 0.005
+    output_adapter: motus_native_multimodal_batch_v1
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/libero_spatial.ranges.sqlite
+  - name: openvid
+    dataset: openvid
+    weight: 0.2
+    prompt_mode: text_only
+    adapter_options:
+      state_action_policy: absent
+      allow_missing_state_action: true
+      placeholder_state_action_dim: 26
+      action_loss_weight: 0.0
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260812_v1_smoke/openvid.ranges.sqlite
+  - name: robotwin_aloha
+    dataset: robotwin_aloha
+    weight: 0.005
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_aloha.train.ranges.sqlite
+  - name: robotwin_ur5
+    dataset: robotwin_ur5
+    weight: 0.005
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_ur5.train.ranges.sqlite
+  - name: robotwin_arx
+    dataset: robotwin_arx
+    weight: 0.005
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_arx.train.ranges.sqlite
+  - name: robotwin_piper
+    dataset: robotwin_piper
+    weight: 0.005
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260807/robotwin_piper.train.ranges.sqlite
+training:
+  batch_size: 2
+system:
+  num_workers: 0
+  pin_memory: false
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 2
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_clone_tensors: false

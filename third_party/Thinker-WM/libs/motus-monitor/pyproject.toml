@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motus-monitor"
+version = "0.1.0"
+description = "Real-time training monitor for Motus: append-only chunked-JSONL client (stdlib-only), SSH byte-incremental sync, Flask web server (REST + SSE + native JS frontend)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+server = ["flask>=3.1,<4"]
+dev = ["pytest"]
+
+[project.scripts]
+motus-monitor = "motus_monitor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["motus_monitor*"]
+
+[tool.setuptools.package-data]
+motus_monitor = ["web/*", "web/**/*"]

@@ -1,0 +1,243 @@
+# stage2_20260802：agibot_beta + robotwin×4 全模态联合训练（新注意力架构）
+# 基于 stage2_20260731_v1，模型侧（models/uni_branch.py / world_model.py /
+# video_branch.py / action_branch.py / und_branch.py）的注意力架构改为：
+#   1) video/action encoder 的 cross-attn 条件由 T5 文本 embedding 换成
+#      und token（VLM 对「首帧图+任务文本」的理解），T5 不再直接进模型
+#      （und 先于 encoder 计算；decoder 仍用 uni 末层 und）。
+#   2) und token 采用文本类 1D RoPE（grid = [L_und,1,1]）；video<->action 的
+#      RoPE 只保留时间维（H/W 分量为单位元），即两者之间仅关注 t 不关注 HW。
+#   3) video/action decoder 的 cross-attn 使用 uni 分支最后一层输出的 und token。
+#   4) uni 分支 self-attn 为 block-diagonal：(video, action) 组内互相 attend，
+#      und 只 attend 自己；(video, action) 与 und 之间互相 mask（移入 cross-attn）。
+#   5) uni 分支 cross-attn 为 (video, action) <-> und 的相互 cross-attn，
+#      在 flash-attn 中并行计算（两个 varlen 调用）。
+# 数据侧与 stage2_20260731_v1 一致：agibot_beta + robotwin×4（4:1 配比）、
+# robotwin 主视角裁剪、5 层 MLP projector、统一 VLM task prompt。
+# 采样比例保持视频帧:动作帧=1:1（video_action_freq_ratio: 1）。
+#
+# 生产 ranges（动态 index，运行时内存随机窗口）需先构建（train/holdout 各一
+# 份，输出到 /data/chen.liao/thinkerwm-pretrain/training_dataset_config/）。
+# 离群动作样本（|action|>100）由训练侧 loss 置零处理（k8s 脚本
+# MOTUS_ACTION_MAGNITUDE_GUARD_THRESHOLD=0 关库内 raise +
+# MOTUS_TRAIN_OUTLIER_LOSS_ZERO_THRESHOLD=100），无需建库期过滤；
+# 如需过滤可用 --action-guard-threshold（配合 --workers 并行加速）。
+#   CAT=/data/jiyuan.wang/EpisodeCatalogs
+#   OUT=/data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1
+#   python data_prepare/build_sampling_ranges.py \
+#     --catalog $CAT/_20260723/agibot_beta/agibot_beta_full_20260723_concise_v2.episode_catalog.jsonl \
+#     --dataset agibot_beta --num-video-frames 48 \
+#     --split train --holdout-fraction 0.01 --output $OUT/agibot_beta.train.ranges.sqlite
+#   （--split holdout 同样再建一份 agibot_beta.holdout.ranges.sqlite）
+#   for n in robotwin_aloha robotwin_ur5 robotwin_arx robotwin_piper; do
+#     python data_prepare/build_sampling_ranges.py \
+#       --catalog $CAT/_20260727/ten_source_full_v1/$n.20260727_full_v1.episode_catalog.jsonl \
+#       --dataset $n --num-video-frames 48 \
+#       --split train --holdout-fraction 0.01 --output $OUT/$n.train.ranges.sqlite
+#     # 同样再建 $OUT/$n.holdout.ranges.sqlite
+#   done
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 1
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  robot_names:
+    aloha-agilex:
+      action_dim: 14
+      aliases:
+      - aloha-agilex
+      - aloha
+      - agilex
+    ARX-X5:
+      action_dim: 14
+      aliases:
+      - arx-x5
+      - arx
+      - x5
+    piper:
+      action_dim: 14
+      aliases:
+      - piper
+    ur5-wsg:
+      action_dim: 14
+      aliases:
+      - ur5-wsg
+      - ur5
+      - wsg
+    agibot-a2-d:
+      action_dim: 26
+      aliases:
+      - agibot-a2-d
+      - agibot
+      - agibot_beta
+  # indexed（Catalog/SamplePool）数据源。catalog 由 motus_data releases.yaml 默认
+  # 解析（/data/jiyuan.wang/EpisodeCatalogs 下已冻结的 20260723/20260727
+  # release 全量版）。每源 pool spec 为 sampling_ranges：运行时内存动态生成
+  # 随机窗口（不落盘 pool 文件），默认 consecutive 布局（视频连续 49 帧 +
+  # 1 state + 48 动作帧）。
+  sources:
+  - name: agibot_beta
+    dataset: agibot_beta
+    weight: 1.0
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/agibot_beta.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/agibot_beta.holdout.ranges.sqlite
+  - name: robotwin_aloha
+    dataset: robotwin_aloha
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_aloha.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_aloha.holdout.ranges.sqlite
+  - name: robotwin_ur5
+    dataset: robotwin_ur5
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_ur5.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_ur5.holdout.ranges.sqlite
+  - name: robotwin_arx
+    dataset: robotwin_arx
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_arx.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_arx.holdout.ranges.sqlite
+  - name: robotwin_piper
+    dataset: robotwin_piper
+    weight: 0.0625
+    reader:
+      type: robotwin_main_view
+    pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_piper.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /data/chen.liao/thinkerwm-pretrain/training_dataset_config/sampling_ranges/stage2_20260802_v1/robotwin_piper.holdout.ranges.sqlite
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    action_projector_mlp_layers: 5
+  # 统一 VLM task prompt：train/sample/eval 用 t5 原始任务文本经
+  # utils.vlm_utils.build_vlm_task_message 重建 vlm 消息（Scene/Task/Action/Outcome 四字段）。
+  unified_vlm_task_prompt: true
+  time_distribution:
+    timestep_sample_method: logit_normal
+    sigmoid_scale: 1.0
+    min_t: 0.0
+    max_t: 1.0
+  inference:
+    num_inference_timesteps: 20
+  timing_level: 2    # 模型内部耗时检查点级别: 1=分支级, 2=+逐block(每block两次CUDA同步; 5B模型每步约60次同步, 占比可忽略; 不需要时改回1)
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+training:
+  batch_size: 12
+  max_steps: 300000
+  learning_rate: 1.0e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 1000
+  cycle_length: 1000000
+  f_max: 0.99
+  f_min: 0.4
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+system:
+  checkpoint_dir: ./checkpoints
+  log_level: INFO
+  log_interval: 10
+  save_interval: 1000000000
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: stage2_20260802_agibot_beta_robotwin4src_mainview_mlp5_undattn_bs12_300k
+resume:
+  checkpoint_path: null
+  auto_resume_latest: false
+  reset_scheduler: true
+finetune:
+  checkpoint_path: null
+monitor:
+  # 训练监控（monitor/ 库）：写 append-only 分块 JSONL 到
+  # <仓库上级目录>/motus_monitor_data/，本机 web 服务经 SSH 增量同步。
+  # 关闭：enabled: false 或环境变量 MOTUS_MONITOR_ENABLED=0。
+  enabled: true
+  metrics_interval: 1  # monitor 指标记录间隔（步）：1=每步都记；与 console/TB 的 log_interval 无关
+  data_dir: null          # null = 默认目录（可用 $MOTUS_MONITOR_DIR 覆盖）
+  system_interval: 2.0    # 每节点系统采样间隔（秒，local_rank0 采样）
+  status_interval: 2.0    # status.json 最小重写间隔（秒）
+  collect_system: true

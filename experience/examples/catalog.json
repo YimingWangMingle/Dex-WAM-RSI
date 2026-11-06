@@ -1,0 +1,33 @@
+{
+  "bundles": {
+    "hmr-demo": {
+      "entry_points": [
+        "example.md"
+      ],
+      "manifest_sha256": "62638ebb0ca6844a8843c69508247716562e358b9a252ecad840201eb61f564c"
+    },
+    "icl-demo": {
+      "entry_points": [
+        "example.md"
+      ],
+      "manifest_sha256": "2a7c55be2dd673937fe8dfeaa6b08a7070d268fbb13a90c9e13ef4f76606cc06"
+    }
+  },
+  "packages_root": "packages",
+  "revision": "teaching-v1",
+  "schema": "thinkerwam-experience.packages-catalog/v1",
+  "tasks": {
+    "fixture_move_hmr": {
+      "base_task": "fixture_move_hmr",
+      "bundle": "hmr-demo",
+      "kind": "original_preparation",
+      "reason": "Synthetic teaching fixture only"
+    },
+    "fixture_move_icl": {
+      "base_task": "fixture_move_icl",
+      "bundle": "icl-demo",
+      "kind": "original_preparation",
+      "reason": "Synthetic teaching fixture only"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motus-data-factory"
+version = "0.1.0"
+description = "Model-independent multimodal robot data loading, mixing, and ready-batch queue"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+  "omegaconf",
+  "numpy",
+  "Pillow",
+]
+
+[project.optional-dependencies]
+robot = ["h5py", "scipy", "opencv-python", "decord"]
+egoverse = ["zarr==3.1.5"]
+libero = ["pyarrow>=14"]
+egoscale = ["pyarrow>=14"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["motus_data*"]
+
+[tool.setuptools.package-data]
+motus_data = ["*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

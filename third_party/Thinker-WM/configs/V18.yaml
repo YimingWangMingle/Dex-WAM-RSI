@@ -1,0 +1,401 @@
+# V18: V16 complete demonstrations, per-task weights tiered by V16@500 success; no correction data.
+common:
+  action_dim: 14
+  state_dim: 14
+  unified_action_dim: 14
+  num_video_frames: 24
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 2
+  action_chunk_size: 48
+dataset:
+  type: indexed_mix
+  batches_per_epoch: 1040
+  drop_last: true
+  cross_rank_source_policy: weighted_per_step
+  robot_names:
+    aloha:
+      action_dim: 14
+      unified_dim_map:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+      robot_token_index: 16
+  sources:
+  - name: new_weak7
+    dataset: robotwin_3d
+    weight: 0.24
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/new.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/new.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/V18_data/tiered_catalogs/new_weak7.ranges.sqlite
+      text_choice: first
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: new_weak7
+      source_names: &id001
+      - new_weak7
+      - orig_weak7
+      - new_mid7
+      - orig_mid6
+      - orig_sat4
+      - new_other10
+      - orig_other10
+      - robotwin_3d
+      source_weights: &id002
+      - 0.24
+      - 0.16
+      - 0.1
+      - 0.06
+      - 0.08
+      - 0.157
+      - 0.063
+      - 0.14
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+  - name: orig_weak7
+    dataset: robotwin_3d
+    weight: 0.16
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/V18_data/tiered_catalogs/orig_weak7.ranges.sqlite
+      text_choice: random
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: orig_weak7
+      source_names: *id001
+      source_weights: *id002
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+  - name: new_mid7
+    dataset: robotwin_3d
+    weight: 0.1
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/new.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/new.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/V18_data/tiered_catalogs/new_mid7.ranges.sqlite
+      text_choice: first
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: new_mid7
+      source_names: *id001
+      source_weights: *id002
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+  - name: orig_mid6
+    dataset: robotwin_3d
+    weight: 0.06
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/V18_data/tiered_catalogs/orig_mid6.ranges.sqlite
+      text_choice: random
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: orig_mid6
+      source_names: *id001
+      source_weights: *id002
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+  - name: orig_sat4
+    dataset: robotwin_3d
+    weight: 0.08
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/V18_data/tiered_catalogs/orig_sat4.ranges.sqlite
+      text_choice: random
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: orig_sat4
+      source_names: *id001
+      source_weights: *id002
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+  - name: new_other10
+    dataset: robotwin_3d
+    weight: 0.157
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/new.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/new.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/new_other10.ranges.sqlite
+      text_choice: first
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: new_other10
+      source_names: *id001
+      source_weights: *id002
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+  - name: orig_other10
+    dataset: robotwin_3d
+    weight: 0.063
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/orig_other10.ranges.sqlite
+      text_choice: random
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: orig_other10
+      source_names: *id001
+      source_weights: *id002
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+  - name: robotwin_3d
+    dataset: robotwin_3d
+    weight: 0.14
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: phased_global_ranges
+      path: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data/catalogs/robotwin_3d.ranges.sqlite
+      text_choice: random
+      action_start_offset: 0
+      group_size: 4
+      cycle_base_step: 0
+      source_name: robotwin_3d
+      source_names: *id001
+      source_weights: *id002
+      world_size: 24
+      schedule_steps: 1040
+      episodes_per_batch: 2
+    eval_pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d_seen100/robotwin_3d.holdout.v14_f24_r2.ranges.sqlite
+      text_choice: first
+      action_start_offset: 0
+depth:
+  robotwin_3d_root: /code1/zxw_data/pretrain/RoboTwin_Eval/testseed24_20261006/V16_data
+  z_near: 0.01
+  z_far: 2.0
+  mode: log
+  invalid_to: far
+  prod_keep_only: true
+  attach_workers: 6
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    modality_dropout_video: 0.1
+    modality_dropout_action: 0.1
+    modality_dropout_prompt: 0.1
+    independent_modality_noise: true
+    flow_shift: 6.0
+    action_flow_shift: 1.0
+    action_norm_policy: zscore
+    action_target_repr: absolute_native
+    zero_action_loss_force_max_noise: false
+    enable_depth: true
+    depth_loss_weight: 1.0
+    depth_motion_loss_enable: false
+    depth_edge_loss_enable: false
+    depth_read_by_action: true
+    depth_read_by_video: true
+    depth_read_by_und: true
+    depth_detach_video_kv: false
+    modality_dropout_depth: 0.1
+    depth_share_video_noise: true
+    depth_uni_clone_layers: 14
+  unified_vlm_task_prompt: true
+  vlm_prompt_style: robotwin_tlayout
+  vlm_text_rewrite: false
+  vlm_field_dropout_prob: 0.0
+  inference:
+    num_inference_timesteps: 10
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 4
+    action_temporal_smooth_alpha: 0.5
+    depth_temporal_smooth_alpha: 0.0
+  timing_level: 2
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+  load_pretrained_backbones: false
+training:
+  batch_size: 8
+  max_steps: 500
+  learning_rate: 5.0e-06
+  depth_learning_rate: 5.0e-06
+  depth_clone_learning_rate: 5.0e-06
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 100
+  cycle_length: 2000
+  f_max: 1.0
+  f_min: 0.1
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  train_steps_per_vae_encode: 1
+  seed: 2026101001
+system:
+  checkpoint_dir: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v18_robotwin_nodagger
+  log_level: INFO
+  log_interval: 10
+  save_interval: 250
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: V18
+resume:
+  checkpoint_path: null
+  auto_resume_latest: false
+  reset_scheduler: false
+finetune:
+  checkpoint_path: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v15_robotwin_full/robotwin_3d_full_v15_rgbd/V15_full/checkpoint_step_52000
+timing:
+  enabled: true
+  sync_cuda: false
+  interval: 10
+monitor:
+  enabled: true
+  metrics_interval: 1
+  data_dir: /data/xiongwei.zhao/thinkerwam-depth/motus_monitor_data
+  system_interval: 2.0
+  status_interval: 2.0
+  collect_system: true
+periodic_eval:
+  enabled: false
+  interval_steps: 1000
+  num_inference_steps: 10
+  batch_size: 8
+  seed: 20260908
+  vlm_generate: false
+  fps: 50
+  train_pool_fraction: 0.0
+  holdout_family_counts:
+    robotwin_3d: 268
+  cache_dir: /data/xiongwei.zhao/thinkerwam-depth/periodic_eval_cache_v15_full
+  source_weights:
+    new_weak7: 0.0
+    orig_weak7: 0.0
+    new_mid7: 0.0
+    orig_mid6: 0.0
+    orig_sat4: 0.0
+    new_other10: 0.0
+    orig_other10: 0.0
+    robotwin_3d: 1.0
+    ewmbenchmark: 0.0
+  ewmbenchmark:
+    enabled: false
+    root: /data/chen.liao/EWMBenchmark
+    robot_name: agibot-a2-d

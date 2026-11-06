@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>管理后台 · Motus Monitor</title>
+<script>
+(function () {
+  var theme = "light";
+  try { theme = localStorage.getItem("motus.monitor.theme") || "light"; } catch (e) {}
+  document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .admin-main { max-width: 860px; margin: 24px auto; padding: 0 16px; }
+  .admin-main h1 { font-size: 18px; margin: 0 0 16px; }
+  .admin-main h2 { font-size: 15px; margin: 0 0 12px; }
+  .admin-card { margin-bottom: 20px; padding: 16px 20px; }
+  .admin-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .admin-card input {
+    padding: 6px 8px; font-size: 13px; border-radius: 6px;
+    border: 1px solid var(--border, #444); background: transparent; color: inherit;
+  }
+  .admin-card select {
+    padding: 5px 8px; font-size: 13px; border-radius: 6px;
+    border: 1px solid var(--border, #444); background: transparent; color: inherit;
+  }
+  .log-table { width: 100%; table-layout: fixed; }
+  .log-table td, .log-table th { padding: 3px 8px; font-size: 12px; }
+  .log-table td.log-ts { width: 150px; font-family: var(--mono); color: var(--muted); }
+  .log-table td.log-level { width: 76px; font-weight: 600; }
+  .log-table td.log-logger { width: 170px; font-family: var(--mono); color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-table td.log-msg { font-family: var(--mono); word-break: break-all; white-space: pre-wrap; }
+  .log-table td.lv-DEBUG { color: var(--muted); }
+  .log-table td.lv-WARNING { color: #d29922; }
+  .log-table td.lv-ERROR, .log-table td.lv-CRITICAL { color: #e5534b; }
+  .admin-hint { font-size: 12px; }
+  .admin-msg { font-size: 12px; min-height: 16px; }
+  .admin-msg.err { color: #e5534b; }
+  .admin-msg.ok { color: #3fb950; }
+  .users-table td, .users-table th { padding: 4px 10px; font-size: 13px; }
+  pre.guide {
+    white-space: pre-wrap; font-size: 12px; padding: 10px; border-radius: 6px;
+    border: 1px solid var(--border, #444); max-height: 320px; overflow: auto;
+  }
+</style>
+</head>
+<body>
+<div class="admin-main">
+  <h1>Motus Monitor 管理后台 <span class="muted admin-hint">（仅本机 127.0.0.1 可访问）</span></h1>
+
+  <div class="card admin-card">
+    <h2>证书（内部 HTTPS）</h2>
+    <div class="admin-row">
+      <button class="btn" id="ca-download">下载 CA 证书（ca.pem）</button>
+      <button class="btn" id="guide-view">查看 Ubuntu 导入说明</button>
+      <button class="btn" id="guide-script">下载导入脚本（import-ca.sh）</button>
+    </div>
+    <pre class="guide hidden" id="guide-box"></pre>
+    <h2 style="margin-top:14px">重签服务器证书</h2>
+    <div class="admin-row">
+      <input id="san-input" size="44" placeholder="SAN 列表，逗号分隔，如 10.0.0.8, monitor.lan">
+      <button class="btn" id="cert-regen">重签</button>
+    </div>
+    <div class="admin-hint muted">当前 SAN：<span id="san-current">（查询中…）</span>；重签后需重启主站生效。</div>
+    <div class="admin-hint muted">Chrome 报 NET::ERR_CERT_COMMON_NAME_INVALID = 访问地址不在证书 SAN 中：在下方「访问地址」添加该地址（会按合并 SAN 自动重签），重启主站生效。</div>
+    <div class="admin-msg" id="cert-msg"></div>
+  </div>
+
+  <div class="card admin-card">
+    <h2>账户（主站登录）</h2>
+    <table class="users-table data-table">
+      <thead><tr><th>用户名</th><th>状态</th><th>创建时间</th><th style="text-align:right">操作</th></tr></thead>
+      <tbody id="users-body"></tbody>
+    </table>
+    <div class="admin-row" style="margin-top:10px">
+      <input id="user-name" size="14" placeholder="用户名">
+      <input id="user-pass" size="14" type="password" placeholder="密码（≥6 位）">
+      <button class="btn" id="user-add">添加账户</button>
+    </div>
+    <div class="admin-hint muted">主站 /register 首个注册的账户自动批准；其后注册的账户为「待审批」，批准后方能登录。</div>
+    <div class="admin-msg" id="user-msg"></div>
+  </div>
+
+  <div class="card admin-card">
+    <h2>访问地址（主站 Host 白名单）</h2>
+    <table class="users-table data-table">
+      <thead><tr><th>地址</th><th>来源</th><th style="text-align:right">操作</th></tr></thead>
+      <tbody id="addr-body"></tbody>
+    </table>
+    <div class="admin-row" style="margin-top:10px">
+      <input id="addr-input" size="30" placeholder="IP 或主机名，如 10.10.29.71">
+      <button class="btn" id="addr-add">添加地址</button>
+    </div>
+    <div class="admin-hint muted">添加后 Host 白名单即时生效（无需重启）；同时按合并 SAN 重签服务器证书，证书需重启主站生效。</div>
+    <div class="admin-msg" id="addr-msg"></div>
+  </div>
+
+  <div class="card admin-card">
+    <h2>服务状态</h2>
+    <pre class="guide" id="status-box">加载中…</pre>
+    <div class="admin-row">
+      <button class="btn" id="status-refresh">刷新</button>
+      <button class="btn danger" id="helper-restart">重启 dataset helper</button>
+    </div>
+    <div class="admin-msg" id="status-msg"></div>
+  </div>
+
+  <div class="card admin-card">
+    <h2>服务日志</h2>
+    <div class="admin-row">
+      <select id="log-level">
+        <option value="ALL">ALL</option>
+        <option value="DEBUG">DEBUG</option>
+        <option value="INFO" selected>INFO</option>
+        <option value="WARNING">WARNING</option>
+        <option value="ERROR">ERROR</option>
+      </select>
+      <input id="log-q" size="20" placeholder="关键字过滤（logger/消息）">
+      <button class="btn" id="log-refresh">刷新</button>
+      <label class="admin-hint"><input type="checkbox" id="log-auto" checked> 自动刷新（5s）</label>
+      <button class="btn" id="log-download">下载 server.log</button>
+    </div>
+    <div class="admin-hint muted" id="log-hint"></div>
+    <table class="users-table data-table log-table">
+      <thead><tr><th>时间</th><th>级别</th><th>logger</th><th>消息</th></tr></thead>
+      <tbody id="logs-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  function el(id) { return document.getElementById(id); }
+  function msg(id, text, ok) {
+    var box = el(id);
+    box.textContent = text || "";
+    box.className = "admin-msg" + (text ? (ok ? " ok" : " err") : "");
+  }
+  function api(path, options) {
+    return fetch(path, options).then(function (resp) {
+      return resp.json().then(function (body) {
+        if (!resp.ok) throw new Error((body && body.error) || ("HTTP " + resp.status));
+        return body;
+      });
+    });
+  }
+  function fmtTs(ts) {
+    if (!ts) return "—";
+    var d = new Date(ts * 1000);
+    return isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  }
+
+  /* ---------------- 证书 ---------------- */
+  el("ca-download").addEventListener("click", function () {
+    window.location.href = "/admin/api/ca/download";
+  });
+  el("guide-view").addEventListener("click", function () {
+    api("/admin/api/ca/import-guide").then(function (body) {
+      var box = el("guide-box");
+      box.textContent = body.guide || "";
+      box.classList.remove("hidden");
+    }).catch(function (err) { msg("cert-msg", err.message, false); });
+  });
+  el("guide-script").addEventListener("click", function () {
+    window.location.href = "/admin/api/ca/import-guide?format=script";
+  });
+  el("cert-regen").addEventListener("click", function () {
+    var sans = el("san-input").value.split(",").map(function (s) { return s.trim(); })
+      .filter(function (s) { return s; });
+    if (!sans.length) { msg("cert-msg", "请填写至少一个 SAN（IP 或主机名）", false); return; }
+    if (!window.confirm("确认按这些 SAN 重签服务器证书？\\n" + sans.join(", "))) return;
+    api("/admin/api/cert/regenerate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ san: sans }),
+    }).then(function (body) {
+      msg("cert-msg", body.note || "已重签", true);
+      loadStatus();
+    }).catch(function (err) { msg("cert-msg", err.message, false); });
+  });
+
+  /* ---------------- 账户 ---------------- */
+  function loadUsers() {
+    api("/admin/api/users").then(function (body) {
+      var tbody = el("users-body");
+      tbody.innerHTML = "";
+      var users = body.users || {};
+      Object.keys(users).sort().forEach(function (name) {
+        var info = users[name] || {};
+        var pending = info.status === "pending";
+        var tr = document.createElement("tr");
+        var tdName = document.createElement("td"); tdName.textContent = name;
+        var tdStatus = document.createElement("td");
+        tdStatus.textContent = pending ? "待审批" : "已批准";
+        tdStatus.style.color = pending ? "#d29922" : "";
+        var tdTs = document.createElement("td"); tdTs.textContent = fmtTs(info.created_at);
+        var tdOp = document.createElement("td"); tdOp.style.textAlign = "right";
+        if (pending) {
+          var okBtn = document.createElement("button");
+          okBtn.className = "btn"; okBtn.textContent = "批准";
+          okBtn.addEventListener("click", function () {
+            api("/admin/api/users/" + encodeURIComponent(name) + "/approve", { method: "POST" })
+              .then(function () { msg("user-msg", "已批准 " + name, true); loadUsers(); })
+              .catch(function (err) { msg("user-msg", err.message, false); });
+          });
+          var noBtn = document.createElement("button");
+          noBtn.className = "btn danger"; noBtn.textContent = "拒绝";
+          noBtn.addEventListener("click", function () {
+            if (!window.confirm("确认拒绝并删除注册申请 " + name + "？")) return;
+            api("/admin/api/users/" + encodeURIComponent(name) + "/reject", { method: "POST" })
+              .then(function () { msg("user-msg", "已拒绝 " + name, true); loadUsers(); })
+              .catch(function (err) { msg("user-msg", err.message, false); });
+          });
+          tdOp.appendChild(okBtn); tdOp.appendChild(noBtn);
+        } else {
+          var del = document.createElement("button");
+          del.className = "btn danger"; del.textContent = "删除";
+          del.addEventListener("click", function () {
+            if (!window.confirm("确认删除账户 " + name + "？")) return;
+            api("/admin/api/users/" + encodeURIComponent(name), { method: "DELETE" })
+              .then(function () { msg("user-msg", "已删除 " + name, true); loadUsers(); })
+              .catch(function (err) { msg("user-msg", err.message, false); });
+          });
+          tdOp.appendChild(del);
+        }
+        tr.appendChild(tdName); tr.appendChild(tdStatus); tr.appendChild(tdTs); tr.appendChild(tdOp);
+        tbody.appendChild(tr);
+      });
+    }).catch(function (err) { msg("user-msg", err.message, false); });
+  }
+  el("user-add").addEventListener("click", function () {
+    var username = el("user-name").value.trim();
+    var password = el("user-pass").value;
+    if (!username || !password) { msg("user-msg", "请填写用户名和密码", false); return; }
+    api("/admin/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username, password: password }),
+    }).then(function () {
+      msg("user-msg", "已添加 " + username, true);
+      el("user-name").value = ""; el("user-pass").value = "";
+      loadUsers();
+    }).catch(function (err) { msg("user-msg", err.message, false); });
+  });
+
+  /* ---------------- 访问地址 ---------------- */
+  function loadAddrs() {
+    api("/admin/api/access-addresses").then(function (body) {
+      var tbody = el("addr-body");
+      tbody.innerHTML = "";
+      function row(host, source, removable) {
+        var tr = document.createElement("tr");
+        var tdHost = document.createElement("td"); tdHost.textContent = host;
+        var tdSrc = document.createElement("td"); tdSrc.textContent = source;
+        var tdOp = document.createElement("td"); tdOp.style.textAlign = "right";
+        if (removable) {
+          var del = document.createElement("button");
+          del.className = "btn danger"; del.textContent = "移除";
+          del.addEventListener("click", function () {
+            if (!window.confirm("确认把 " + host + " 移出 Host 白名单？")) return;
+            api("/admin/api/access-addresses/" + encodeURIComponent(host), { method: "DELETE" })
+              .then(function () { msg("addr-msg", "已移除 " + host, true); loadAddrs(); })
+              .catch(function (err) { msg("addr-msg", err.message, false); });
+          });
+          tdOp.appendChild(del);
+        }
+        tr.appendChild(tdHost); tr.appendChild(tdSrc); tr.appendChild(tdOp);
+        tbody.appendChild(tr);
+      }
+      (body.base || []).forEach(function (h) { row(h, "启动 SAN", false); });
+      (body.extra || []).forEach(function (h) { row(h, "后台添加", true); });
+    }).catch(function () {
+      /* 非 public 模式没有 Host 白名单 */
+      el("addr-body").innerHTML = "";
+      msg("addr-msg", "未启用 public 模式，无 Host 白名单", false);
+    });
+  }
+  el("addr-add").addEventListener("click", function () {
+    var host = el("addr-input").value.trim();
+    if (!host) { msg("addr-msg", "请填写 IP 或主机名", false); return; }
+    api("/admin/api/access-addresses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host: host }),
+    }).then(function (body) {
+      msg("addr-msg", (body.note || "已添加") + (body.cert_note ? " " + body.cert_note : ""), true);
+      el("addr-input").value = "";
+      loadAddrs();
+      loadStatus();
+    }).catch(function (err) { msg("addr-msg", err.message, false); });
+  });
+
+  /* ---------------- 状态 ---------------- */
+  function loadStatus() {
+    api("/admin/api/status").then(function (body) {
+      var sans = ((body.certs || {}).server_sans) || [];
+      el("san-current").textContent = sans.length ? sans.join(", ") : "（尚未签发）";
+      el("status-box").textContent = JSON.stringify(body, null, 2);
+    }).catch(function (err) {
+      el("status-box").textContent = "加载失败: " + err.message;
+    });
+  }
+  el("status-refresh").addEventListener("click", loadStatus);
+  el("helper-restart").addEventListener("click", function () {
+    if (!window.confirm("确认重启 dataset helper 池？进行中的解码会中断。")) return;
+    api("/admin/api/helper/restart", { method: "POST" })
+      .then(function () { msg("status-msg", "helper 已重启", true); loadStatus(); })
+      .catch(function (err) { msg("status-msg", err.message, false); });
+  });
+
+  loadUsers();
+  loadAddrs();
+  loadStatus();
+
+  /* ---------------- 服务日志 ---------------- */
+  function fmtLogTs(ts) {
+    if (!ts) return "—";
+    var d = new Date(ts * 1000);
+    if (isNaN(d.getTime())) return "—";
+    function p(x) { return (x < 10 ? "0" : "") + x; }
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+      " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+  function loadLogs() {
+    var level = el("log-level").value;
+    var q = el("log-q").value.trim();
+    var url = "/admin/api/logs?tail=500";
+    if (level && level !== "ALL") url += "&level=" + encodeURIComponent(level);
+    if (q) url += "&q=" + encodeURIComponent(q);
+    api(url).then(function (body) {
+      var logs = body.logs || [];
+      var tbody = el("logs-body");
+      tbody.innerHTML = "";
+      logs.forEach(function (entry) {
+        var tr = document.createElement("tr");
+        var tdTs = document.createElement("td");
+        tdTs.className = "log-ts"; tdTs.textContent = fmtLogTs(entry.ts);
+        var tdLv = document.createElement("td");
+        tdLv.className = "log-level lv-" + (entry.level || "");
+        tdLv.textContent = entry.level || "";
+        var tdLg = document.createElement("td");
+        tdLg.className = "log-logger"; tdLg.textContent = entry.logger || "";
+        tdLg.title = entry.logger || "";
+        var tdMsg = document.createElement("td");
+        tdMsg.className = "log-msg"; tdMsg.textContent = entry.message || "";
+        tr.appendChild(tdTs); tr.appendChild(tdLv);
+        tr.appendChild(tdLg); tr.appendChild(tdMsg);
+        tbody.appendChild(tr);
+      });
+      el("log-hint").textContent = "共 " + logs.length + " 条（倒序，最新在前）";
+    }).catch(function (err) {
+      el("log-hint").textContent = err.message;
+    });
+  }
+  el("log-refresh").addEventListener("click", loadLogs);
+  el("log-level").addEventListener("change", loadLogs);
+  el("log-q").addEventListener("change", loadLogs);
+  el("log-download").addEventListener("click", function () {
+    window.location.href = "/admin/api/logs/download";
+  });
+  setInterval(function () { if (el("log-auto").checked) loadLogs(); }, 5000);
+  loadLogs();
+})();
+</script>
+</body>
+</html>

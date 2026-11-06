@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>注册 · Motus Monitor</title>
+<script>
+(function () {
+  var theme = "light";
+  try { theme = localStorage.getItem("motus.monitor.theme") || "light"; } catch (e) {}
+  document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .login-card { width: 340px; padding: 28px; }
+  .login-card h1 { font-size: 18px; margin: 0 0 4px; }
+  .login-card .sub { font-size: 12px; margin-bottom: 20px; }
+  .login-card label { display: block; font-size: 12px; margin: 12px 0 4px; }
+  .login-card input {
+    width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 14px;
+    border-radius: 6px; border: 1px solid var(--border, #444); background: var(--bg-input, transparent);
+    color: inherit;
+  }
+  .login-card button {
+    width: 100%; margin-top: 18px; padding: 9px 0; font-size: 14px; cursor: pointer;
+    border-radius: 6px; border: 1px solid var(--border, #444);
+  }
+  .login-err { color: #e5534b; font-size: 12px; min-height: 16px; margin-top: 10px; }
+  .login-ok { color: #3fb950; font-size: 12px; min-height: 16px; margin-top: 10px; }
+  .login-link { display: block; margin-top: 12px; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <form class="login-card card" id="register-form">
+    <h1>Motus Monitor</h1>
+    <div class="sub muted">注册新账户 · 首个账户自动批准，其后需管理员审批</div>
+    <label for="username">用户名</label>
+    <input id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">密码（至少 6 位）</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" required>
+    <label for="password2">确认密码</label>
+    <input id="password2" name="password2" type="password" autocomplete="new-password" required>
+    <button type="submit" class="btn">注 册</button>
+    <div class="login-err" id="register-err"></div>
+    <div class="login-ok" id="register-ok"></div>
+    <a class="login-link" href="/login">已有账户？去登录</a>
+  </form>
+</div>
+<script>
+(function () {
+  var form = document.getElementById("register-form");
+  var errBox = document.getElementById("register-err");
+  var okBox = document.getElementById("register-ok");
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    errBox.textContent = "";
+    okBox.textContent = "";
+    var password = document.getElementById("password").value;
+    if (password !== document.getElementById("password2").value) {
+      errBox.textContent = "两次输入的密码不一致";
+      return;
+    }
+    fetch("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: document.getElementById("username").value,
+        password: password,
+      }),
+    }).then(function (resp) {
+      return resp.json().then(function (body) {
+        if (!resp.ok) throw new Error((body && body.error) || ("HTTP " + resp.status));
+        return body;
+      });
+    }).then(function (body) {
+      form.reset();
+      okBox.textContent = (body && body.pending)
+        ? "注册已提交，请等待管理员审批后再登录。"
+        : "注册成功，可直接去登录。";
+    }).catch(function (err) {
+      errBox.textContent = err.message || "注册失败";
+    });
+  });
+})();
+</script>
+</body>
+</html>

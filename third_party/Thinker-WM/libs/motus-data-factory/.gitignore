@@ -1,0 +1,21 @@
+# 数据与产物文件（交付时不上传）
+micro_data/
+checkpoints/
+outputs/
+dataset_timing/
+tmp/
+.runtime/
+*.out
+.vscode
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+.ipynb_checkpoints/
+
+# 系统文件
+.DS_Store

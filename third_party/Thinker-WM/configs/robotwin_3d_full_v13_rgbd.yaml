@@ -1,0 +1,218 @@
+# V13：RoboTwin 全量 50 任务 RGB+D。24 卡。
+# 从 V12@8000 只加载权重（finetune）。相对 V12 只改三处：
+#   1. 24 帧视频 + 48 步动作（video_stride，ratio=2）
+#   2. train_steps_per_vae_encode: 1
+#   3. save_interval: 2000，max_steps: 50000（一轮约 33465 步，即约 1.49 轮）
+# 其余与 V12 相同（depth 三路全开、robotwin_tlayout、LR 全 1e-5）。
+# action_t_downsample 保持 1（每 token 1 步）：动作头形状与 V12 完全一致、
+# 逐字加载。改 d=2 会命中 ubt_wm._remap_unified_capacity_growth 的通用
+# "一维变小即零填充"规则，把时间核维/unembedding 输出维零填充（而非交给
+# _remap_action_t_downsample 做均值池化+平铺），每 token 第 2 步恒为 0，
+# action_loss 卡在 1.0（V13_smoke 实测）。d=1 时 RoPE 时间 scale = 1/(2*4)，
+# 与 24 帧 latent 网格几何一致。
+# 不要 resume V12 优化器：视频长度变了。
+
+common:
+  action_dim: 14
+  state_dim: 14
+  unified_action_dim: 14
+  num_video_frames: 24
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 2
+  action_chunk_size: 48
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: true
+  cross_rank_source_policy: weighted_per_step
+  robot_names:
+    aloha:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 16
+  sources:
+  - name: robotwin_3d
+    dataset: robotwin_3d
+    weight: 1.0
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.train.v13_f24_r2.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.holdout.v13_f24_r2.ranges.sqlite
+depth:
+  robotwin_3d_root: /data/xiongwei.zhao/robotwin_3d
+  z_near: 0.01
+  z_far: 2.0
+  mode: log
+  invalid_to: far
+  prod_keep_only: true
+  # batch 内逐样本读深度是 ffmpeg 子进程（每样本 3 路），线程池并行。实测
+  # 8 线程对 bs6 快约 4 倍（2.7s → 0.7s），输出与串行逐位相同
+  # （tmp/smoke_depth_attach_workers.py）。1 = 退回串行。
+  attach_workers: 8
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    modality_dropout_video: 0.1
+    modality_dropout_action: 0.1
+    modality_dropout_prompt: 0.1
+    independent_modality_noise: true
+    flow_shift: 6.0
+    action_flow_shift: 1.0
+    action_norm_policy: zscore
+    action_target_repr: absolute_native
+    zero_action_loss_force_max_noise: false
+    enable_depth: true
+    depth_loss_weight: 1.0
+    depth_motion_loss_enable: false
+    depth_edge_loss_enable: false
+    depth_read_by_action: true
+    depth_read_by_video: true
+    depth_read_by_und: true
+    depth_detach_video_kv: false
+    modality_dropout_depth: 0.1
+    depth_share_video_noise: true
+    depth_uni_clone_layers: 14
+  unified_vlm_task_prompt: true
+  vlm_prompt_style: robotwin_tlayout
+  vlm_text_rewrite: false
+  # robotwin_tlayout 没有 Scene/Task/Action/Outcome 可丢，0 避免空转。
+  vlm_field_dropout_prob: 0.0
+  inference:
+    num_inference_timesteps: 10
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 4
+    action_temporal_smooth_alpha: 0.5
+    depth_temporal_smooth_alpha: 0.0
+  timing_level: 2
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+  load_pretrained_backbones: false
+training:
+  batch_size: 6
+  # 一轮 = 4,818,954 起点 ÷ (24 卡 × bs6 × VAE 复用 1) = 33,465 步。
+  # 50000 步 = 720 万样本 ≈ 1.49 轮；按实测 loop 14~15 s/步约 8.4 天。
+  # LR 是 cycle_length 1e6 的近平坦调度，任意 2000 步存盘点早停不吃亏。
+  max_steps: 50000
+  learning_rate: 1.0e-05
+  depth_learning_rate: 1.0e-05
+  depth_clone_learning_rate: 1.0e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  warmup_steps: 1000
+  cycle_length: 1000000
+  f_max: 0.99
+  f_min: 0.4
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  train_steps_per_vae_encode: 1
+  seed: 20260908
+system:
+  checkpoint_dir: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v13_robotwin_full
+  log_level: INFO
+  log_interval: 10
+  save_interval: 2000
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: V13_full
+resume:
+  checkpoint_path: null
+  auto_resume_latest: true
+  reset_scheduler: false
+finetune:
+  # 8000 存档已齐；续训只走 resume/auto_resume_latest，不再先读 V12。
+  checkpoint_path: null
+timing:
+  enabled: true
+  sync_cuda: false
+  interval: 10
+monitor:
+  enabled: true
+  metrics_interval: 1
+  data_dir: /data/xiongwei.zhao/thinkerwam-depth/motus_monitor_data
+  system_interval: 2.0
+  status_interval: 2.0
+  collect_system: true
+periodic_eval:
+  enabled: true
+  interval_steps: 4000
+  num_inference_steps: 10
+  seed: 20260908
+  vlm_generate: false
+  fps: 50
+  train_pool_fraction: 0.0
+  holdout_family_counts:
+    robotwin_3d: 268
+  cache_dir: /data/xiongwei.zhao/thinkerwam-depth/periodic_eval_cache_v13_full
+  source_weights:
+    robotwin_3d: 1.0
+    ewmbenchmark: 0
+  ewmbenchmark:
+    enabled: false
+    root: /data/chen.liao/EWMBenchmark
+    robot_name: agibot-a2-d

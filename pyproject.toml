@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thinkerwam-rsi-framework"
+version = "0.1.0"
+description = "RSI execution contracts, skills, experience and candidate management"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+execution = ["numpy>=1.24,<3", "Pillow>=9"]
+
+[tool.setuptools]
+py-modules = ["framework_cli", "thinker_wm"]
+
+[tool.setuptools.packages.find]
+include = ["rsi", "rsi.*", "execution", "execution.*", "skills", "skills.*",
+           "tools", "tools.*", "agents", "agents.*", "experience", "experience.*",
+           "environments", "environments.*", "data", "data.*", "scripts",
+           "examples", "examples.modular"]
+exclude = ["compat", "compat.*", "tests", "tests.*", "third_party", "third_party.*"]
+
+[tool.setuptools.package-data]
+experience = ["README.md", "templates/*.md", "examples/**/*.md", "examples/**/*.json", "examples/*.json"]
+"environments.robodojo.experiments" = ["source_manifest.json"]
+"tools.perception" = ["*.md"]

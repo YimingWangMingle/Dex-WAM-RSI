@@ -1,0 +1,14 @@
+[
+  {"source": "agibot_beta_parallel_gripper", "split": "holdout", "shard": 1, "note": "Fold towels on the table"},
+  {"source": "agibot_beta_parallel_gripper", "split": "holdout", "shard": 2, "note": "Sort food"},
+  {"source": "agibot_beta_parallel_gripper", "split": "holdout", "shard": 3, "note": "Pickup in the supermarket"},
+  {"source": "agibot_beta_dexterous_hand", "split": "holdout", "shard": 2, "note": "Pack the medicine"},
+  {"source": "egoscale_first500h_remaining90pct", "split": "holdout", "shard": 1, "note": "first500 remaining shard1"},
+  {"source": "egoscale_first500h_remaining90pct", "split": "holdout", "shard": 2, "note": "first500 remaining shard2"},
+  {"source": "egoscale_second1700h_batch01", "split": "holdout", "shard": 1, "note": "second1700 batch01 shard1"},
+  {"source": "egoscale_second1700h_batch01", "split": "holdout", "shard": 2, "note": "second1700 batch01 shard2"},
+  {"source": "egoscale_second1700h_batch01", "split": "holdout", "shard": 3, "note": "second1700 batch01 shard3"},
+  {"source": "egoscale_second1700h_batch02", "split": "holdout", "shard": 0, "note": "second1700 batch02 (new source)"},
+  {"source": "egoscale_second1700h_batch02", "split": "holdout", "shard": 1, "note": "second1700 batch02 shard1"},
+  {"source": "egoscale_second1700h_batch02", "split": "holdout", "shard": 2, "note": "second1700 batch02 shard2"}
+]

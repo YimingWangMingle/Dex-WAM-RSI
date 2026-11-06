@@ -1,0 +1,20 @@
+{
+  "source": "layout3-sixgroups-20261104",
+  "service_overlay": "wam-recovery-high-20261103",
+  "files": {
+    "rsi/pi05_backend.py": "45f11ffcd7e016aab37741cf6f097a0d6e1828a659e0d48944f0bed68336e382",
+    "rsi/wam_revision.py": "fd31ae960a62c2ab286a6ca66d6a67bcef4ed5dce4f0ac054332415d1fc7fc77",
+    "rsi/pi05_diversity.py": "d42441a54b1997f5796fee14c7a64078e96ca7129c331979f75364dc6cdb3f8c",
+    "rsi/wam_review_context.py": "26f44b4d1404874ff287f058fcabf4a81d717302f71dedae80a0a5e46f3871aa",
+    "rsi/metric_prediction_depth.py": "f90c8450fb0de26187fe74b16c8533aaa00006849ba95d255da837bbefd0b46b",
+    "rsi/robodojo_framework.py": "b28c28b144d8ef3cd864888f729192b5f83a9000a2bda055a68d9f658ea22d37",
+    "runtime/robodojo_a2v.py": "b525b39c05c7b1786eb6ab1bd69a363b7c2d0eb106ad19681a073a64dc2453a4"
+  },
+  "launchers": {
+    "run_episode.py": "53624a89ee9c5ba2b771c51c6ee724c2c1d61dd5c4c95bd3285bf2e2aa24f02b",
+    "review_worker.py": "d63c5b028e0e53b2b63ead0736767fe15b7efc749fa2e57ef9f9c129f7e2de4c",
+    "start_sim.sh": "3c2fe7eb48af23274a1a5811c2dc3bd476f7650c734685594d422fe8b45ae1e0",
+    "completion-requirements.txt": "00294819a687463f9e0b97f4b7be7c2cb0a14acd6fe3097c3cfabb8733df5364"
+  },
+  "service_a2v_equals_simulation_snapshot": true
+}

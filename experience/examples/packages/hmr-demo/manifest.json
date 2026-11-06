@@ -1,0 +1,13 @@
+{
+  "files": {
+    "example.md": "b6ec4a12fd79a59f030bb64985ed15877c1cb897d8b451f4ad33c40ff10ac733"
+  },
+  "metadata": {
+    "channel": "hmr",
+    "payload_bytes": 480,
+    "scope": "synthetic-teaching-only"
+  },
+  "package_id": "hmr-demo",
+  "package_type": "rpent.icl.context",
+  "schema_version": 1
+}

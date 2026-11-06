@@ -1,0 +1,98 @@
+# H200 CPU 冒烟配置：经 data_prepare 接入层验证 10 源 indexed 混合读取。
+#
+# 数据源 = motus_data releases.yaml 冻结的集群 catalogs（默认解析到
+# /data/jiyuan.wang/EpisodeCatalogs）+ 每源 sampling_ranges sidecar
+# （/data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/，
+# 需先在 H200 用 data_prepare/build_sampling_ranges.py 按冻结 catalog 构建；
+# pool 在运行时内存动态生成随机窗口，不落盘）。
+#
+# 用法（H200，纯 CPU）：
+#   python scripts/smoke_indexed_mix_cpu.py --config configs/smoke_indexed_mix_cpu.yaml --steps 8
+#
+# 注意：agibot 的原始动作频率是视频的 6 倍，ranges 按 ratio=6 记录、pool 生成的
+# 动作索引为 288 个/窗口，因此该源必须覆盖 adapter 的 action_video_fps_ratio=6
+# （本冒烟只验证数据通路，与模型 action_chunk 无关）。
+common:
+  action_dim: 26
+  state_dim: 26
+  num_video_frames: 48
+  video_height: 64
+  video_width: 64
+  global_downsample_rate: 1
+  video_action_freq_ratio: 1
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: false
+  sources:
+  - name: robotwin_aloha
+    dataset: robotwin_aloha
+    weight: 0.025
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotwin_aloha.ranges.sqlite
+  - name: robotwin_ur5
+    dataset: robotwin_ur5
+    weight: 0.025
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotwin_ur5.ranges.sqlite
+  - name: robotwin_arx
+    dataset: robotwin_arx
+    weight: 0.025
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotwin_arx.ranges.sqlite
+  - name: robotwin_piper
+    dataset: robotwin_piper
+    weight: 0.025
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotwin_piper.ranges.sqlite
+  - name: agibot
+    dataset: agibot
+    weight: 1.0
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/agibot.ranges.sqlite
+    adapter_options:
+      action_video_fps_ratio: 6
+  - name: agibot_beta
+    dataset: agibot_beta
+    weight: 1.0
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/agibot_beta.ranges.sqlite
+  - name: robotmind_tianyi
+    dataset: robotmind_tianyi
+    weight: 0.05
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotmind_tianyi.ranges.sqlite
+  - name: robotmind_arkmobile
+    dataset: robotmind_arkmobile
+    weight: 0.025
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotmind_arkmobile.ranges.sqlite
+  - name: robotmind_ark
+    dataset: robotmind_ark
+    weight: 0.05
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotmind_ark.ranges.sqlite
+  - name: robotmind_tienkung
+    dataset: robotmind_tienkung
+    weight: 0.05
+    pool:
+      type: sampling_ranges
+      path: /data/jiyuan.wang/SamplingRanges/_20260727/ten_source_smoke_v1/robotmind_tienkung.ranges.sqlite
+training:
+  batch_size: 2
+system:
+  num_workers: 0
+  pin_memory: false
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 2
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_clone_tensors: false

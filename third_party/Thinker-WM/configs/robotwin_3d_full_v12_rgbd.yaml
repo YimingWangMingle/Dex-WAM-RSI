@@ -1,0 +1,238 @@
+# V12：RoboTwin 全量 50 任务 RGB+D。16 卡。
+# 模型块与 V11_A 逐字相同（depth 三路全开、robotwin_tlayout、LR 全 1e-5）——
+# V11_A 在 turn_switch 上验证的是这套配方，不是那份单任务权重。
+#
+# 热启 V10@5000（finetune，只加载权重 + 全新优化器）。不要从 V11_A@7000 起：
+# 那是 486 条 turn_switch（50 个任务里的 1 个）上再训 7000 步的过拟合权重。
+# V10@5000 训练时是 motus_four_field，本配置是 robotwin_tlayout，prompt 口径
+# 变了，旧优化器动量不匹配，所以走 finetune 而不是 resume 全状态。
+#
+# 数据：全量 catalog 27500 episode / 50 任务，每任务 550 条连续。
+# train 27232 / holdout 268（fraction 0.01）。
+#
+# 续训纪律（V11_A 7000→8000 把 RGB 训糊的两个原因，都已修）：
+#   - resume.reset_scheduler: false —— true 会清零 step_count 重跑 warmup，
+#     和 ckpt 里的 Adam 动量不匹配。
+#   - train.py 续训时按 global_step 推进 data epoch —— 否则数据流从排列头部
+#     重走，最后一段训练只是重放开头见过的窗口。
+#
+# periodic_eval 关闭：改用 tmp/robotwin_full_holdout100.json（50 任务 × 2）
+# 每 4000 步离线跑 scripts/eval_family_holdout_rank.py --clips，不占训练循环。
+# 看 MAE + 分视角手腕 PSNR，不要只看整图 PSNR / AbsRel——V11_A 那次退化里
+# 这两个指标是反向的。
+
+common:
+  action_dim: 14
+  state_dim: 14
+  unified_action_dim: 14
+  num_video_frames: 48
+  video_height: 480
+  video_width: 640
+  global_downsample_rate: 1
+  video_action_freq_ratio: 1
+  action_chunk_size: 48
+dataset:
+  type: indexed_mix
+  batches_per_epoch: null
+  drop_last: true
+  cross_rank_source_policy: weighted_per_step
+  robot_names:
+    aloha:
+      action_dim: 14
+      unified_dim_map: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+      robot_token_index: 16
+  sources:
+  - name: robotwin_3d
+    dataset: robotwin_3d
+    weight: 1.0
+    prompt_mode: vlm_image_text
+    catalog_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.episode_catalog.jsonl
+    index_path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.episode_catalog.index.sqlite
+    reader:
+      type: robotwin_3d
+      resize_mode: pad
+    pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.train.ranges.sqlite
+    eval_pool:
+      type: sampling_ranges
+      path: /code1/zxw_data/pretrain/ThinkerWAM-Depth-Action-RGB-RoboTwin/tmp/catalogs/robotwin_3d/robotwin_3d.holdout.ranges.sqlite
+depth:
+  robotwin_3d_root: /data/xiongwei.zhao/robotwin_3d
+  z_near: 0.01
+  z_far: 2.0
+  mode: log
+  invalid_to: far
+  prod_keep_only: true
+model:
+  wan:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B
+    vae_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    precision: bfloat16
+  vlm:
+    checkpoint_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    config_path: /code1/llm_team/chen.liao/Motus/pretrained_models/Qwen3-VL-2B-Instruct
+    precision: bfloat16
+    frozen: true
+  wm:
+    video_encoder_layer_num: 8
+    video_decoder_layer_num: 8
+    action_encoder_layer_num: 8
+    action_decoder_layer_num: 8
+    und_layer_num: 4
+    action_t_downsample: 1
+    modality_dropout_video: 0.1
+    modality_dropout_action: 0.1
+    modality_dropout_prompt: 0.1
+    independent_modality_noise: true
+    flow_shift: 6.0
+    action_flow_shift: 1.0
+    action_norm_policy: zscore
+    action_target_repr: absolute_native
+    zero_action_loss_force_max_noise: false
+    enable_depth: true
+    depth_loss_weight: 1.0
+    depth_motion_loss_enable: false
+    depth_edge_loss_enable: false
+    depth_read_by_action: true
+    depth_read_by_video: true
+    depth_read_by_und: true
+    depth_detach_video_kv: false
+    modality_dropout_depth: 0.1
+    depth_share_video_noise: true
+    depth_uni_clone_layers: 14
+  unified_vlm_task_prompt: true
+  vlm_prompt_style: robotwin_tlayout
+  vlm_text_rewrite: false
+  # robotwin_tlayout 没有四字段可 drop，关掉避免空转。
+  vlm_field_dropout_prob: 0.0
+  inference:
+    num_inference_timesteps: 10
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+    action_num_inference_timesteps: 4
+    action_temporal_smooth_alpha: 0.5
+    depth_temporal_smooth_alpha: 0.0
+  timing_level: 2
+  freeze_action_branch: false
+  gradient_checkpointing: true
+  checkpoint_video_branch: true
+  checkpoint_uni_branch: true
+  checkpoint_action_branch: true
+  loss_weights:
+    video_loss_weight: 1.0
+    action_loss_weight: 1.0
+  ema:
+    enabled: false
+    update_after_step: 0
+    inv_gamma: 1.0
+    power: 0.75
+    min_value: 0.0
+    max_value: 0.9999
+  load_pretrained_backbones: false
+training:
+  # 24 卡 × 6 = 有效 batch 144。bs=6 实测（8 卡 smoke，60/60 步 exit=0）
+  # 峰值 110.8 / 140 GiB；叠加在线评测 B=12 后约 108 GiB，余量约 30 GiB。
+  batch_size: 6
+  # 50000 步 × 24 卡 × bs6 ÷ train_steps_per_vae_encode(3) = 240 万样本
+  # = 全量 4,818,954 窗口的 0.50 轮 = 每条 episode 平均被采 88 次。
+  # 约 11.5 s/step → 墙钟约 160 小时。
+  max_steps: 50000
+  learning_rate: 1.0e-05
+  depth_learning_rate: 1.0e-05
+  depth_clone_learning_rate: 1.0e-05
+  weight_decay: 0.01
+  scheduler_type: linear
+  # optimizer 由 finetune 全新初始化 + 有效 batch 比 V11_A 大 6 倍，
+  # warmup 从 500 提到 1000（占全程 2%）换开头的稳定。
+  warmup_steps: 1000
+  cycle_length: 1000000
+  f_max: 0.99
+  f_min: 0.4
+  grad_clip_norm: 0.5
+  use_amp: true
+  find_unused_parameters: false
+  num_workers: 0
+  prefetch_factor: null
+  persistent_workers: false
+  pin_memory: false
+  train_steps_per_vae_encode: 3
+  seed: 20260908
+system:
+  checkpoint_dir: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v12_robotwin_full
+  log_level: INFO
+  log_interval: 10
+  # 与 periodic_eval.interval_steps 对齐：每个存盘点都有同步的评测指标。
+  # 单个 checkpoint 163 GB —— 1000 步存一次 = 50 个 = 8.1 TB；4000 步 = 12 个
+  # = 2.0 TB。代价是崩溃最多回退 4000 步（约 12.8 小时）。
+  save_interval: 4000
+  val_interval: 204800000000
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: null
+  ready_batch_queue_enabled: true
+  ready_batch_queue_size: 6
+  ready_batch_queue_timeout_seconds: 600
+  ready_batch_queue_low_watermark: 0
+  ready_batch_queue_clone_tensors: true
+  train_loop_gc_interval: 100
+diagnostics:
+  action_diagnostics_enabled: true
+  action_diagnostics_interval: 50
+  action_loss_anomaly_threshold: 10.0
+  action_tensor_abs_anomaly_threshold: 50.0
+  grad_norm_anomaly_threshold: 1000.0
+  heartbeat_enabled: false
+  heartbeat_memory_interval: 10
+  nonfinite_scan_interval: 50
+logging:
+  report_to: tensorboard
+  wandb_project: motus
+  tensorboard_log_dir: tensorboard_logs_new
+  run_name: V12_full
+resume:
+  checkpoint_path: null
+  auto_resume_latest: true
+  # 续训接着原 LR 计划走。true 会把 step_count 清零重跑 warmup，
+  # 与 7000 的 Adam 动量不匹配（V11_A 7000→8000 就是这么坏的）。
+  reset_scheduler: false
+finetune:
+  checkpoint_path: /data/xiongwei.zhao/thinkerwam-depth/checkpoints/v10_robotwin/robotwin_3d_rgbd/v10_robotwin/checkpoint_step_5000
+timing:
+  enabled: true
+  sync_cuda: false
+  interval: 100
+monitor:
+  enabled: true
+  metrics_interval: 1
+  data_dir: /data/xiongwei.zhao/thinkerwam-depth/motus_monitor_data
+  system_interval: 2.0
+  status_interval: 2.0
+  collect_system: true
+periodic_eval:
+  enabled: true
+  interval_steps: 4000
+  # 与闭环协议同口径（10 步视频 / 4 步 action / smooth 0.5 取自 model.inference）。
+  num_inference_steps: 10
+  seed: 20260908
+  vlm_generate: false
+  fps: 50
+  train_pool_fraction: 0.0
+  # 取满整个 holdout（268 条）= 50/50 任务全覆盖。
+  # 不要降到 100：shard 走的是 seed 洗牌后的前 N 条，实测前 100 只覆盖
+  # 41/50 个任务（漏 5 11 16 24 26 41 43 45 47），前 150 覆盖 47/50。
+  # 268 条按 24 卡拆约 11 条/卡，一轮约 5 分钟，12 轮合计约 1 小时。
+  # 想要严格「每任务 2 条」的可比集合，用 tmp/robotwin_full_holdout100.json
+  # 走 tmp/launch_holdout_v12_100.sh 离线跑（periodic_eval 不支持钉 episode）。
+  holdout_family_counts:
+    robotwin_3d: 268
+  cache_dir: /data/xiongwei.zhao/thinkerwam-depth/periodic_eval_cache_v12_full
+  source_weights:
+    robotwin_3d: 1.0
+    ewmbenchmark: 0
+  ewmbenchmark:
+    enabled: false
+    root: /data/chen.liao/EWMBenchmark
+    robot_name: agibot-a2-d
