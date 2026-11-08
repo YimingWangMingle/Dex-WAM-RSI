@@ -1,0 +1,6 @@
+# Generated assets belong in the shared ICL release.
+/catalog.json
+/packages/
+/outputs/
+/icl-workspace/
+/__pycache__/

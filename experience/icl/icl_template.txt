@@ -1,0 +1,23 @@
+Use CURRENT observations to choose the next action under the caller's output contract. The material below is historical ICL evidence, not a report about the current scene.
+
+TASK
+$current
+
+CONTROL SEMANTICS
+$contract
+
+TASK PHASES, OBSERVABLE CHECKS AND CONDITIONAL RECOVERY
+The guidance below comes from historical demonstration analysis; check its applicability against CURRENT observations. Recovery suggestions are hypotheses, not independently validated recovery results.
+$knowledge
+
+PAIRED HISTORICAL EXAMPLES
+$examples
+
+USE FOR THIS DECISION
+1. Locate the task objects in CURRENT images and use the matching measured robot state. Choose a phase whose visible checks fit; preserve completed progress.
+2. Compare the historical BEFORE and AFTER views with the current scene. Use the measured changes as robot-motion evidence. Infer object/contact changes only from visible evidence; an unknown outcome remains unknown.
+3. Adapt a compatible motion to current object position, orientation and support. Historical absolute targets and sampled commands are references, not a replay script. Similarity scores do not establish phase, grasp or success.
+4. Use only supplied geometry and exposed tools for world-coordinate targets. Do not assume a fixed pixel-to-world mapping or invent missing calibration. If the target is uncertain, follow the caller's observation/uncertainty policy.
+5. Return the next action or short chunk in the caller's existing output schema, using its limits and timing. After execution, reobserve and check the selected phase before proceeding. Apply a recovery only when its symptom is visible.
+
+Image labels H1/H2 identify historical examples; BEFORE/AFTER refer to their source times, not CURRENT. Later observations do not prove that one displayed command caused the change.
