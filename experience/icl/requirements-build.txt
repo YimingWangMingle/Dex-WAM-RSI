@@ -1,0 +1,4 @@
+-r requirements.txt
+zarr>=2.18,<3
+numcodecs>=0.10,<0.16
+opencv-python-headless>=4.8,<5

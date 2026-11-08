@@ -1,0 +1,4 @@
+# Preserve the upstream byte hashes when checking out these text resources.
+* text eol=lf
+# This pinned upstream card contains two intentional end-of-line spaces.
+third_party/DexJoCo-Datasets-Raw-CARD.md whitespace=-blank-at-eol

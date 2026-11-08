@@ -24,5 +24,8 @@ exclude = ["compat", "compat.*", "tests", "tests.*", "third_party", "third_party
 
 [tool.setuptools.package-data]
 experience = ["README.md", "templates/*.md", "examples/**/*.md", "examples/**/*.json", "examples/*.json"]
+"experience.icl" = ["icl_template.txt"]
+"experience.icl.preparation" = ["attribution/LICENSE*", "attribution/THIRD_PARTY_NOTICES.md",
+                                 "attribution/third_party/*", "attribution/sources/*/SOURCES.md"]
 "environments.robodojo.experiments" = ["source_manifest.json"]
 "tools.perception" = ["*.md"]

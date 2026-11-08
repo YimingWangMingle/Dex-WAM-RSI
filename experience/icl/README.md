@@ -5,6 +5,38 @@ Each episode opens the current task's frozen experience package. At each decisio
 robot state. `build_messages` places their text and images alongside the current
 observation in the model request.
 
+## Build all 11 task packages from DexJoCo training recordings
+
+From the repository root, run the following on a node that can read the raw data
+and write to the shared release directory. Replace the two example paths.
+
+```bash
+DATA_ROOT="/path/to/dexjoco_raw_datasets_rand_full"
+ICL_RELEASE="/path/to/shared/dexjoco_icl_v1"
+python -m pip install -r experience/icl/requirements-build.txt
+python -m experience.icl.build_from_raw --data-root "$DATA_ROOT" --output "$ICL_RELEASE"
+export ICL_CATALOG="$ICL_RELEASE/catalog.json"
+```
+
+Use Python 3.10 or newer and a new release directory. The default build reads
+all 100 training episodes for each of the 11 tasks. Each episode directory
+contains a Zarr v2 `replay.zarr` with `data/state`, `data/action_rotvec`,
+`data/timestamp` and `meta/episode_ends`, and two synchronized 30 Hz MP4s
+in `videos/`. Single-arm cameras are `random_camera.mp4` and `wrist.mp4`;
+dual-arm cameras are `wrist_left.mp4` and `wrist_right.mp4`. Set the data root
+to the parent of the task directories or a root containing them under `raw/`
+or `dexjoco_raw_datasets_rand_full/`. Use the official rand_full training split.
+
+The builder analyzes public robot states and both RGB views, selects eight
+representative demonstrations per task, and saves aligned image/action windows.
+The task phases and conditional recovery text come from the bundled curated
+guidance. Their provenance and license notices travel with each package. The
+output catalog is published after all requested packages pass validation.
+Temporary files are written beside the release. A CPU run is sufficient.
+Use `--task click_mouse` if you want to check one task first; use a separate
+output directory for the subsequent full build. `--workers` controls the
+number of episode readers (default 4).
+
 ## Shared experience release
 
 Set `ICL_CATALOG` in the launch environment to the shared release's

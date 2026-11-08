@@ -1,0 +1,17 @@
+# Frozen knowledge: component licenses
+
+This collection contains original generated notes/helper code and material
+based on the DexJoCo training demonstrations and referenced robot assets.
+There is no blanket relicensing of third-party material.
+
+- Original generated notes and helper code: MIT (see LICENSE-MIT).
+- DexJoCo training data: the pinned upstream dataset card declares MIT;
+  see third_party/DexJoCo-Datasets-Raw-CARD.md and THIRD_PARTY_NOTICES.md.
+- Franka-derived robot reference material: Apache-2.0.
+- Wonik Allegro-derived material: BSD-2-Clause.
+- Material derived from GeoRT-supplied robot assets remains subject to the
+  supplied CC BY-NC terms, including the noncommercial condition.
+
+Keep this file, THIRD_PARTY_NOTICES.md, third_party/ notices, and each task's
+payload/SOURCES.md with redistributed copies. The MIT notice covers only
+material for which that license applies; it does not remove third-party terms.
